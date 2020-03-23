@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "desdeo-mcdm"
+version = "0.1.0"
+description = "Contains traditional optimization techniques from the field of Multiple-criteria decision-making. Methods belonging to the NIMBUS and NAUTILUS families can be found here. Part of the DESDEO framework."
+authors = ["Giovanni Misitano"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+desdeo-tools = "^0.2.1"
+desdeo-problem = "^0.13.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.4.1"
+black = "^19.10b0"
+jupyter = "^1.0.0"
+matplotlib = "^3.2.1"
+flake8 = "^3.7.9"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
