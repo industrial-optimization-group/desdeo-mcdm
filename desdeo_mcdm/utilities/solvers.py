@@ -51,7 +51,7 @@ def payoff_table_method(
     )
 
     if problem.n_of_constraints > 0:
-        constraints = (lambda xs: problem.evaluate(xs).constraints,)
+        constraints = lambda x: problem.evaluate(x).constraints.squeeze()
     else:
         constraints = None
 
