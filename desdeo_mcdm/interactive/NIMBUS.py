@@ -66,7 +66,65 @@ class NimbusSaveRequest(BaseRequest):
 
 
 class NimbusIntermediateSolutionsRequest(BaseRequest):
-    pass
+    def __init__(
+        self,
+        solution_vectors: List[np.ndarray],
+        objective_vectors: List[np.ndarray],
+    ):
+        msg = (
+            "Would you like to see intermediate solutions between two previusly computed solutions? "
+            "If so, please supply two indices corresponding to the solutions."
+        )
+
+        content = {
+            "messgae": msg,
+            "solutions": solution_vectors,
+            "objectives": objective_vectors,
+            "indices": [],
+            "number_of_desired_solutions": 0,
+        }
+
+        super().__init__(
+            "classification_preference", "required", content=content
+        )
+
+
+class NimbusMostPreferredRequest(BaseRequest):
+    def __init__(
+        self,
+        solution_vectors: List[np.ndarray],
+        objective_vectors: List[np.ndarray],
+    ):
+        msg = "Please select your most preferred solution and whether you would like to continue. "
+
+        content = {
+            "message": msg,
+            "solutions": solution_vectors,
+            "objectives": objective_vectors,
+            "index": -1,
+            "continue": True,
+        }
+
+        super().__init__(
+            "classification_preference", "required", content=content
+        )
+
+
+class NimbusStopRequest(BaseRequest):
+    def __init__(
+        self, solution_final: np.ndarray, objective_final: np.ndarray,
+    ):
+        msg = "The final solution computed."
+
+        content = {
+            "message": msg,
+            "solution": solution_final,
+            "objective": objective_final,
+        }
+
+        super().__init__(
+            "classification_preference", "no_interaction", content=content
+        )
 
 
 class NIMBUS(InteractiveMethod):
@@ -115,11 +173,13 @@ class NIMBUS(InteractiveMethod):
 
         super().__init__(problem)
 
-    def requests(self) -> List[BaseRequest]:
-        if self._state == "classify":
-            return [
-                NimbusClassificationRequest(self._current_solution.squeeze())
-            ]
+    def request_classification(
+        self,
+    ) -> Tuple[NimbusClassificationRequest, SimplePlotRequest]:
+        return (
+            NimbusClassificationRequest(self._current_objectives.squeeze()),
+            None,
+        )
 
     def handle_classification_request(
         self, request: NimbusClassificationRequest
@@ -224,7 +284,7 @@ class NIMBUS(InteractiveMethod):
 
     def handle_save_request(
         self, request: NimbusSaveRequest
-    ) -> Tuple[NimbusIntermediateSolutionsRequest, None]:
+    ) -> Tuple[NimbusIntermediateSolutionsRequest, SimplePlotRequest]:
         if not request.response["indices"]:
             # nothing to save, continue to next state
             pass
@@ -252,6 +312,205 @@ class NIMBUS(InteractiveMethod):
             np.array(request.response["indices"]),
         )
 
+    def handle_intermediate_solutions_request(
+        self, request: NimbusIntermediateSolutionsRequest
+    ) -> Tuple[
+        Union[NimbusSaveRequest, NimbusMostPreferredRequest], SimplePlotRequest,
+    ]:
+        if request.response["number_of_desired_solutions"] <= 0:
+            return self.request_most_preferred_solution(
+                np.array(request.content["solutions"]),
+                np.array(request.content["objectives"]),
+            )
+
+        if len(request.response["indices"]) != 2:
+            # if desired number of solutions is non zero, exactly two indices must be supplied!
+            print("ERROR 131231")
+            pass
+
+        if (
+            len(request.response["indices"])
+            > len(request.content["objectives"])
+            or len(request.response["indices"]) < 0
+        ):
+            # wrong number of indices
+            print("ERROR 1")
+
+        if (
+            np.max(request.response["indices"])
+            >= len(request.content["objectives"])
+            or np.min(request.response["indices"]) < 0
+        ):
+            # out of bounds index
+            print("ERROR 2")
+
+        return self.compute_intermediate_solutions(
+            np.array(request.content["solutions"])[request.response["indices"]],
+            int(request.response["number_of_desired_solutions"]),
+        )
+
+    def handle_most_preferred_request(
+        self, request: NimbusMostPreferredRequest
+    ) -> Tuple[
+        Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest
+    ]:
+        # check that the index in the response is a single integer
+        if not type(request.response["index"]) == int:
+            print("index not and index error")
+            exit()
+
+        # check the bounds of the index
+        if not (
+            request.response["index"] >= 0
+            and request.response["index"] < len(request.content["objectives"])
+        ):
+            print("index out of bounds error")
+            exit()
+
+        self.update_current_solution(
+            np.array(request.content["solutions"]),
+            np.array(request.content["objectives"]),
+            np.array(request.response["index"]),
+        )
+
+        if not request.response["continue"]:
+            return self.request_stop()
+
+        else:
+            return self.request_classification()
+
+    def request_stop(self) -> Tuple[NimbusStopRequest, SimplePlotRequest]:
+        request = NimbusStopRequest(
+            self._current_solution, self._current_objectives
+        )
+
+        # plot request
+        dimensions_data = pd.DataFrame(
+            index=["minimize", "ideal", "nadir"],
+            columns=self._problem.get_objective_names(),
+        )
+        dimensions_data.loc["minimize"] = self._problem._max_multiplier
+        dimensions_data.loc["ideal"] = self._ideal
+        dimensions_data.loc["nadir"] = self._nadir
+
+        data = pd.DataFrame(
+            self._current_objectives,
+            columns=self._problem.get_objective_names(),
+        )
+
+        plot_request = SimplePlotRequest(
+            data=data,
+            dimensions_data=dimensions_data,
+            message="Final solution reached",
+        )
+
+        return request, plot_request
+
+    def request_most_preferred_solution(
+        self, solutions: np.ndarray, objectives: np.ndarray
+    ) -> Tuple[NimbusMostPreferredRequest, SimplePlotRequest]:
+        # request most preferred solution
+        request = NimbusMostPreferredRequest(list(solutions), list(objectives))
+
+        # plot request
+        dimensions_data = pd.DataFrame(
+            index=["minimize", "ideal", "nadir"],
+            columns=self._problem.get_objective_names(),
+        )
+        dimensions_data.loc["minimize"] = self._problem._max_multiplier
+        dimensions_data.loc["ideal"] = self._ideal
+        dimensions_data.loc["nadir"] = self._nadir
+
+        data = pd.DataFrame(
+            objectives, columns=self._problem.get_objective_names()
+        )
+
+        plot_request = SimplePlotRequest(
+            data=data,
+            dimensions_data=dimensions_data,
+            message="Computed solutions",
+        )
+
+        return request, plot_request
+
+    def compute_intermediate_solutions(
+        self, solutions: np.ndarray, n_desired: int,
+    ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
+        # vector between the two solutions
+        between = solutions[0] - solutions[1]
+        norm = np.linalg.norm(between)
+        between_norm = between / norm
+
+        # the plus 2 assumes we are interested only in n_desired points BETWEEN the
+        # two supplied solutions
+        step_size = norm / (2 + n_desired)
+
+        intermediate_points = np.array(
+            [
+                solutions[1] + i * step_size * between_norm
+                for i in range(1, n_desired + 1)
+            ]
+        )
+
+        # project each of the intermediate solutions to the Pareto front
+        intermediate_solutions = np.zeros(intermediate_points.shape)
+        intermediate_objectives = np.zeros(
+            (n_desired, self._problem.n_of_objectives)
+        )
+        asf = PointMethodASF(self._nadir, self._ideal)
+
+        for i in range(n_desired):
+            scalarizer = Scalarizer(
+                lambda x: self._problem.evaluate(x).objectives,
+                asf,
+                scalarizer_args={
+                    "reference_point": self._problem.evaluate(
+                        intermediate_points[i]
+                    ).objectives
+                },
+            )
+
+            if self._problem.n_of_constraints > 0:
+                cons = lambda x: self._problem.evaluate(x).constraints.squeeze()
+            else:
+                cons = None
+
+            solver = ScalarMinimizer(
+                scalarizer, self._problem.get_variable_bounds(), cons, None
+            )
+
+            res = solver.minimize(self._current_solution)
+            intermediate_solutions[i] = res["x"]
+            intermediate_objectives[i] = self._problem.evaluate(
+                res["x"]
+            ).objectives
+
+        # create appropiate requests
+        save_request = NimbusSaveRequest(
+            list(intermediate_solutions), list(intermediate_objectives)
+        )
+
+        # create the plot request
+        dimensions_data = pd.DataFrame(
+            index=["minimize", "ideal", "nadir"],
+            columns=self._problem.get_objective_names(),
+        )
+        dimensions_data.loc["minimize"] = self._problem._max_multiplier
+        dimensions_data.loc["ideal"] = self._ideal
+        dimensions_data.loc["nadir"] = self._nadir
+
+        data = pd.DataFrame(
+            intermediate_objectives, columns=self._problem.get_objective_names()
+        )
+
+        plot_request = SimplePlotRequest(
+            data=data,
+            dimensions_data=dimensions_data,
+            message="Computed intermediate solutions",
+        )
+
+        return save_request, plot_request
+
     def save_solutions_to_archive(
         self,
         objectives: np.ndarray,
@@ -260,8 +519,38 @@ class NIMBUS(InteractiveMethod):
     ) -> Tuple[NimbusIntermediateSolutionsRequest, None]:
         self._archive_objectives.extend(list(objectives[indices]))
         self._archive_solutions.extend(list(decision_variables[indices]))
-        # create intermediate point request
-        pass
+
+        mask = np.ones(objectives.shape[0], dtype=bool)
+        mask[indices] = False
+
+        req_objectives = self._archive_objectives + list(objectives[mask])
+        req_solutions = self._archive_solutions + list(decision_variables[mask])
+
+        # create intermediate solutions request
+        request = NimbusIntermediateSolutionsRequest(
+            req_solutions, req_objectives
+        )
+
+        # create the plot request
+        dimensions_data = pd.DataFrame(
+            index=["minimize", "ideal", "nadir"],
+            columns=self._problem.get_objective_names(),
+        )
+        dimensions_data.loc["minimize"] = self._problem._max_multiplier
+        dimensions_data.loc["ideal"] = self._ideal
+        dimensions_data.loc["nadir"] = self._nadir
+
+        data = pd.DataFrame(
+            req_objectives, columns=self._problem.get_objective_names()
+        )
+
+        plot_request = SimplePlotRequest(
+            data=data,
+            dimensions_data=dimensions_data,
+            message="Computed new solutions",
+        )
+
+        return request, plot_request
 
     def calculate_new_solutions(
         self,
@@ -413,12 +702,22 @@ class NIMBUS(InteractiveMethod):
 
         return save_request, plot_request
 
+    def update_current_solution(
+        self, solutions: np.ndarray, objectives: np.ndarray, index: int
+    ) -> None:
+        self._current_solution = solutions[index].squeeze()
+        self._current_objectives = objectives[index].squeeze()
+
+        return None
+
     def iterate(
         self,
         request: Union[
             NimbusClassificationRequest,
             NimbusSaveRequest,
             NimbusIntermediateSolutionsRequest,
+            NimbusMostPreferredRequest,
+            NimbusStopRequest,
         ],
     ) -> Tuple[
         Union[
@@ -446,7 +745,62 @@ class NIMBUS(InteractiveMethod):
             if type(request) != NimbusSaveRequest:
                 print("ERROR")
             else:
-                self.handle_save_request(request)
+                try:
+                    requests = self.handle_save_request(request)
+                except Exception as e:
+                    # handle me
+                    print(e)
+                    pass
+                # succesfully generated the next request, change state
+                self._state = "intermediate"
+                return requests
+
+        if self._state == "intermediate":
+            if type(request) != NimbusIntermediateSolutionsRequest:
+                print("ERROR")
+            else:
+                try:
+                    requests = self.handle_intermediate_solutions_request(
+                        request
+                    )
+                except Exception as e:
+                    # handle me
+                    print(e)
+                    raise e
+
+                if type(requests[0]) == NimbusSaveRequest:
+                    self._state = "archive"
+                elif type(requests[0]) == NimbusMostPreferredRequest:
+                    self._state = "preferred"
+
+                return requests
+
+        if self._state == "preferred":
+            if type(request) != NimbusMostPreferredRequest:
+                # wrong type of request
+                print("wrong type of request expected in state 'preferred'")
+            else:
+                try:
+                    requests = self.handle_most_preferred_request(request)
+                except Exception as e:
+                    raise e
+
+                if type(requests[0]) == NimbusStopRequest:
+                    self._state = "end"
+
+                elif type(requests[0]) == NimbusClassificationRequest:
+                    self._state = "classify"
+
+                return requests
+
+        if self._state == "end":
+            # end
+            return request, None
+
+        else:
+            # unknown state error
+            print("error, unknown state")
+            pass
 
 
 if __name__ == "__main__":
@@ -503,17 +857,27 @@ if __name__ == "__main__":
     )
 
     method = NIMBUS(problem)
-    reqs = method.requests()[0]
+    reqs = method.request_classification()[0]
     response = {}
     response["classifications"] = ["<", "<=", "=", ">=", "0"]
     response["levels"] = [-6, -3, -5, 8, 0.349]
     response["number_of_solutions"] = 4
     reqs._response = response
-    res = method.iterate(reqs)[0]
+    res_1 = method.iterate(reqs)[0]
+    res_1._response = {"indices": [0, 2]}
 
-    print(method._archive_objectives)
-    print(method._archive_solutions)
-    res._response = {"indices": [0, 2]}
-    method.iterate(res)
-    print(method._archive_objectives)
-    print(method._archive_solutions)
+    res_2 = method.iterate(res_1)[0]
+    response = {}
+    response["indices"] = [0, 1]
+    response["number_of_desired_solutions"] = 0
+    res_2._response = response
+
+    res_3 = method.iterate(res_2)[0]
+    response_pref = {}
+    response_pref["index"] = 2
+    response_pref["continue"] = True
+    res_3._response = response_pref
+    method.iterate(res_3)
+
+    exit()
+    res_4 = method.iterate(res_3)[0]
