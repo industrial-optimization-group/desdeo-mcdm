@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Optional
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_mcdm.utilities.solvers import payoff_table_method
@@ -13,7 +13,7 @@ from desdeo_tools.scalarization.ASF import (
     PointMethodASF,
     AugmentedGuessASF,
 )
-from desdeo_tools.solver.ScalarSolver import ScalarMinimizer
+from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_problem.Problem import MOProblem
 
@@ -77,7 +77,7 @@ class NimbusIntermediateSolutionsRequest(BaseRequest):
         )
 
         content = {
-            "messgae": msg,
+            "message": msg,
             "solutions": solution_vectors,
             "objectives": objective_vectors,
             "indices": [],
@@ -131,15 +131,20 @@ class NIMBUS(InteractiveMethod):
     """Implements the synchronous NIMBUS variant.
     """
 
-    def __init__(self, problem: MOProblem):
+    def __init__(
+        self, problem: MOProblem, scalar_method: Optional[ScalarMethod] = None
+    ):
         # check if ideal and nadir are defined
         if problem.ideal is None or problem.nadir is None:
+            # TODO: use same method as defined in scalar_method
             ideal, nadir = payoff_table_method(problem)
             self._ideal = ideal
             self._nadir = nadir
         else:
             self._ideal = problem.ideal
             self._nadir = problem.nadir
+
+        self._scalar_method = scalar_method
 
         # generate Pareto optimal starting point
         asf = SimpleASF(np.ones(self._ideal.shape))
@@ -153,11 +158,15 @@ class NIMBUS(InteractiveMethod):
             _con_eval = lambda x: problem.evaluate(x).constraints.squeeze()
         else:
             _con_eval = None
+
         solver = ScalarMinimizer(
             scalarizer,
             problem.get_variable_bounds(),
             constraint_evaluator=_con_eval,
+            method=self._scalar_method,
         )
+        # TODO: fix tools to check for scipy methods in general and delete me!
+        solver._use_scipy = True
 
         res = solver.minimize(problem.get_variable_upper_bounds() / 2)
 
@@ -172,6 +181,9 @@ class NIMBUS(InteractiveMethod):
         self._state = "classify"
 
         super().__init__(problem)
+
+    def start(self) -> Tuple[NimbusClassificationRequest, SimplePlotRequest]:
+        return self.request_classification()
 
     def request_classification(
         self,
@@ -394,7 +406,7 @@ class NIMBUS(InteractiveMethod):
         dimensions_data.loc["nadir"] = self._nadir
 
         data = pd.DataFrame(
-            self._current_objectives,
+            np.atleast_2d(self._current_objectives),
             columns=self._problem.get_objective_names(),
         )
 
@@ -476,8 +488,13 @@ class NIMBUS(InteractiveMethod):
                 cons = None
 
             solver = ScalarMinimizer(
-                scalarizer, self._problem.get_variable_bounds(), cons, None
+                scalarizer,
+                self._problem.get_variable_bounds(),
+                cons,
+                method=self._scalar_method,
             )
+            # TODO: fix me
+            solver._use_scipy = True
 
             res = solver.minimize(self._current_solution)
             intermediate_solutions[i] = res["x"]
@@ -600,8 +617,13 @@ class NIMBUS(InteractiveMethod):
         )
 
         solver_1 = ScalarMinimizer(
-            scalarizer_1, self._problem.get_variable_bounds(), cons_1, None
+            scalarizer_1,
+            self._problem.get_variable_bounds(),
+            cons_1,
+            method=self._scalar_method,
         )
+        # TODO: fix me
+        solver_1._use_scipy = True
 
         res_1 = solver_1.minimize(self._current_solution)
         results.append(res_1)
@@ -633,8 +655,13 @@ class NIMBUS(InteractiveMethod):
             )
 
             solver_2 = ScalarMinimizer(
-                scalarizer_2, self._problem.get_variable_bounds(), cons_2, None
+                scalarizer_2,
+                self._problem.get_variable_bounds(),
+                cons_2,
+                method=self._scalar_method,
             )
+            # TODO: fix me
+            solver_2._use_scipy = True
 
             res_2 = solver_2.minimize(self._current_solution)
             results.append(res_2)
@@ -650,8 +677,13 @@ class NIMBUS(InteractiveMethod):
             )
 
             solver_3 = ScalarMinimizer(
-                scalarizer_3, self._problem.get_variable_bounds(), cons_2, None
+                scalarizer_3,
+                self._problem.get_variable_bounds(),
+                cons_2,
+                method=self._scalar_method,
             )
+            # TODO: fix me
+            solver_3._use_scipy = True
 
             res_3 = solver_3.minimize(self._current_solution)
             results.append(res_3)
@@ -667,8 +699,13 @@ class NIMBUS(InteractiveMethod):
             )
 
             solver_4 = ScalarMinimizer(
-                scalarizer_4, self._problem.get_variable_bounds(), cons_2, None
+                scalarizer_4,
+                self._problem.get_variable_bounds(),
+                cons_2,
+                method=self._scalar_method,
             )
+            # TODO: fix me
+            solver_4._use_scipy = True
 
             res_4 = solver_4.minimize(self._current_solution)
             results.append(res_4)
@@ -710,7 +747,7 @@ class NIMBUS(InteractiveMethod):
 
         return None
 
-    def iterate(
+    def step(
         self,
         request: Union[
             NimbusClassificationRequest,
@@ -733,15 +770,15 @@ class NIMBUS(InteractiveMethod):
             else:
                 try:
                     requests = self.handle_classification_request(request)
-                except Exception as _:
-                    # handle me
+                except Exception as e:
+                    raise e
                     pass
 
                 # succesfully generated new requests, change state
                 self._state = "archive"
                 return requests
 
-        if self._state == "archive":
+        elif self._state == "archive":
             if type(request) != NimbusSaveRequest:
                 print("ERROR")
             else:
@@ -755,7 +792,7 @@ class NIMBUS(InteractiveMethod):
                 self._state = "intermediate"
                 return requests
 
-        if self._state == "intermediate":
+        elif self._state == "intermediate":
             if type(request) != NimbusIntermediateSolutionsRequest:
                 print("ERROR")
             else:
@@ -775,7 +812,7 @@ class NIMBUS(InteractiveMethod):
 
                 return requests
 
-        if self._state == "preferred":
+        elif self._state == "preferred":
             if type(request) != NimbusMostPreferredRequest:
                 # wrong type of request
                 print("wrong type of request expected in state 'preferred'")
@@ -793,13 +830,14 @@ class NIMBUS(InteractiveMethod):
 
                 return requests
 
-        if self._state == "end":
+        elif self._state == "end":
             # end
             return request, None
 
         else:
             # unknown state error
             print("error, unknown state")
+            print(self._state)
             pass
 
 
@@ -809,6 +847,7 @@ if __name__ == "__main__":
     from desdeo_problem.Variable import variable_builder
     from desdeo_problem.Constraint import ScalarConstraint
     from desdeo_tools.scalarization.Scalarizer import Scalarizer
+    from scipy.optimize import differential_evolution
 
     # create the problem
     def f_1(x):
@@ -856,28 +895,36 @@ if __name__ == "__main__":
         variables=varsl, objectives=[f1, f2, f3, f4, f5], constraints=[c1]
     )
 
-    method = NIMBUS(problem)
+    scipy_de_method = ScalarMethod(
+        lambda x, _, **y: differential_evolution(x, **y),
+        method_args={"polish": False},
+    )
+
+    method = NIMBUS(problem, scalar_method=scipy_de_method)
     reqs = method.request_classification()[0]
+
     response = {}
     response["classifications"] = ["<", "<=", "=", ">=", "0"]
     response["levels"] = [-6, -3, -5, 8, 0.349]
     response["number_of_solutions"] = 4
     reqs._response = response
-    res_1 = method.iterate(reqs)[0]
+    res_1 = method.step(reqs)[0]
     res_1._response = {"indices": [0, 2]}
 
-    res_2 = method.iterate(res_1)[0]
+    res_2 = method.step(res_1)[0]
     response = {}
     response["indices"] = [0, 1]
     response["number_of_desired_solutions"] = 0
     res_2._response = response
 
-    res_3 = method.iterate(res_2)[0]
+    res_3 = method.step(res_2)[0]
     response_pref = {}
     response_pref["index"] = 2
     response_pref["continue"] = True
     res_3._response = response_pref
-    method.iterate(res_3)
 
+    res_4 = method.step(res_3)
+
+    print(res_4)
     exit()
-    res_4 = method.iterate(res_3)[0]
+    res_4 = method.step(res_3)
