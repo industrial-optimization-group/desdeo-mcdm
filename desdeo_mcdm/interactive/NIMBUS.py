@@ -286,6 +286,27 @@ class NIMBUS(InteractiveMethod):
             None,
         )
 
+    def create_plot_request(
+        self, objectives: np.ndarray, msg: str
+    ) -> SimplePlotRequest:
+        dimensions_data = pd.DataFrame(
+            index=["minimize", "ideal", "nadir"],
+            columns=self._problem.get_objective_names(),
+        )
+        dimensions_data.loc["minimize"] = self._problem._max_multiplier
+        dimensions_data.loc["ideal"] = self._ideal
+        dimensions_data.loc["nadir"] = self._nadir
+
+        data = pd.DataFrame(
+            objectives, columns=self._problem.get_objective_names()
+        )
+
+        plot_request = SimplePlotRequest(
+            data=data, dimensions_data=dimensions_data, message=msg,
+        )
+
+        return plot_request
+
     def handle_classification_request(
         self, request: NimbusClassificationRequest
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
@@ -422,24 +443,9 @@ class NIMBUS(InteractiveMethod):
             self._current_solution, self._current_objectives
         )
 
-        # plot request
-        dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"],
-            columns=self._problem.get_objective_names(),
-        )
-        dimensions_data.loc["minimize"] = self._problem._max_multiplier
-        dimensions_data.loc["ideal"] = self._ideal
-        dimensions_data.loc["nadir"] = self._nadir
-
-        data = pd.DataFrame(
-            np.atleast_2d(self._current_objectives),
-            columns=self._problem.get_objective_names(),
-        )
-
-        plot_request = SimplePlotRequest(
-            data=data,
-            dimensions_data=dimensions_data,
-            message="Final solution reached",
+        msg = "Final solution reached"
+        plot_request = self.create_plot_request(
+            np.atleast_2d(self._current_objectives), msg
         )
 
         return request, plot_request
@@ -450,24 +456,8 @@ class NIMBUS(InteractiveMethod):
         # request most preferred solution
         request = NimbusMostPreferredRequest(list(solutions), list(objectives))
 
-        # plot request
-        dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"],
-            columns=self._problem.get_objective_names(),
-        )
-        dimensions_data.loc["minimize"] = self._problem._max_multiplier
-        dimensions_data.loc["ideal"] = self._ideal
-        dimensions_data.loc["nadir"] = self._nadir
-
-        data = pd.DataFrame(
-            objectives, columns=self._problem.get_objective_names()
-        )
-
-        plot_request = SimplePlotRequest(
-            data=data,
-            dimensions_data=dimensions_data,
-            message="Computed solutions",
-        )
+        msg = "Computed solutions"
+        plot_request = self.create_plot_request(objectives, msg)
 
         return request, plot_request
 
@@ -533,24 +523,8 @@ class NIMBUS(InteractiveMethod):
             list(intermediate_solutions), list(intermediate_objectives)
         )
 
-        # create the plot request
-        dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"],
-            columns=self._problem.get_objective_names(),
-        )
-        dimensions_data.loc["minimize"] = self._problem._max_multiplier
-        dimensions_data.loc["ideal"] = self._ideal
-        dimensions_data.loc["nadir"] = self._nadir
-
-        data = pd.DataFrame(
-            intermediate_objectives, columns=self._problem.get_objective_names()
-        )
-
-        plot_request = SimplePlotRequest(
-            data=data,
-            dimensions_data=dimensions_data,
-            message="Computed intermediate solutions",
-        )
+        msg = "Computed intermediate solutions"
+        plot_request = self.create_plot_request(intermediate_objectives, msg)
 
         return save_request, plot_request
 
@@ -574,24 +548,8 @@ class NIMBUS(InteractiveMethod):
             req_solutions, req_objectives
         )
 
-        # create the plot request
-        dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"],
-            columns=self._problem.get_objective_names(),
-        )
-        dimensions_data.loc["minimize"] = self._problem._max_multiplier
-        dimensions_data.loc["ideal"] = self._ideal
-        dimensions_data.loc["nadir"] = self._nadir
-
-        data = pd.DataFrame(
-            req_objectives, columns=self._problem.get_objective_names()
-        )
-
-        plot_request = SimplePlotRequest(
-            data=data,
-            dimensions_data=dimensions_data,
-            message="Computed new solutions",
-        )
+        msg = "Computed new solutions"
+        plot_request = self.create_plot_request(req_objectives, msg)
 
         return request, plot_request
 
@@ -736,24 +694,8 @@ class NIMBUS(InteractiveMethod):
 
         save_request = NimbusSaveRequest(solutions, objectives)
 
-        # create the plot request
-        dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"],
-            columns=self._problem.get_objective_names(),
-        )
-        dimensions_data.loc["minimize"] = self._problem._max_multiplier
-        dimensions_data.loc["ideal"] = self._ideal
-        dimensions_data.loc["nadir"] = self._nadir
-
-        data = pd.DataFrame(
-            objectives, columns=self._problem.get_objective_names()
-        )
-
-        plot_request = SimplePlotRequest(
-            data=data,
-            dimensions_data=dimensions_data,
-            message="Computed new solutions",
-        )
+        msg = "Computed new solutions."
+        plot_request = self.create_plot_request(objectives, msg)
 
         return save_request, plot_request
 
