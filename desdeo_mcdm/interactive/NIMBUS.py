@@ -123,15 +123,9 @@ class NimbusClassificationRequest(BaseRequest):
             )
 
     @BaseRequest.response.setter
-    def response(self, response):
-        print("asdfasdfsf")
-        try:
-            self.validator(response)
-        except Exception as e:
-            print("asdfasdfsf")
-            raise e
-        else:
-            self._response = response
+    def response(self, response: Dict):
+        self.validator(response)
+        self._response = response
 
 
 class NimbusSaveRequest(BaseRequest):
@@ -154,6 +148,35 @@ class NimbusSaveRequest(BaseRequest):
         super().__init__(
             "classification_preference", "required", content=content
         )
+
+    def validator(self, response: Dict):
+        if "indices" not in response:
+            raise NimbusException("'indices' entry missing")
+
+        if not response["indices"]:
+            # nothing to save, continue to next state
+            return
+
+        if (
+            len(response["indices"]) > len(self.content["objectives"])
+            or np.min(response["indices"]) < 0
+        ):
+            # wrong number of indices
+            raise NimbusException(f"Invalid indices {response['indices']}")
+
+        if (
+            np.max(response["indices"]) >= len(self.content["objectives"])
+            or np.min(response["indices"]) < 0
+        ):
+            # out of bounds index
+            raise NimbusException(
+                f"Incides {response['indices']} out of bounds."
+            )
+
+    @BaseRequest.response.setter
+    def response(self, response: Dict):
+        self.validator(response)
+        self._response = response
 
 
 class NimbusIntermediateSolutionsRequest(BaseRequest):
@@ -179,6 +202,48 @@ class NimbusIntermediateSolutionsRequest(BaseRequest):
             "classification_preference", "required", content=content
         )
 
+    def validator(self, response: Dict):
+        if not "indices" in response:
+            raise NimbusException("'indices' entry missing.")
+
+        if not "number_of_desired_solutions" in response:
+            raise NimbusException(
+                "'number_of_desired_solutions' entry missing."
+            )
+
+        if response["number_of_desired_solutions"] < 0:
+            raise NimbusException(
+                f"Invalid number of desired solutions {response['number_of_desired_solutions']}."
+            )
+
+        if (
+            not response["indices"]
+            and response["number_of_desired_solutions"] > 0
+        ):
+            raise NimbusException(
+                "Indices supplied yet number of desired soutions is greater than zero."
+            )
+
+        if response["indices"] and response["number_of_desired_solutions"] == 0:
+            raise NimbusException(
+                "Indices not supplied yet number of desired soutions is zero."
+            )
+
+        if not response["indices"]:
+            return
+
+        if (
+            np.max(response["indices"]) >= len(self.content["objectives"])
+            or np.min(response["indices"]) < 0
+        ):
+            # indices out of bounds
+            raise NimbusException(f"Invalid indices {response['indices']}")
+
+    @BaseRequest.response.setter
+    def response(self, response: Dict):
+        self.validator(response)
+        self._response = response
+
 
 class NimbusMostPreferredRequest(BaseRequest):
     def __init__(
@@ -199,6 +264,39 @@ class NimbusMostPreferredRequest(BaseRequest):
         super().__init__(
             "classification_preference", "required", content=content
         )
+
+    def validator(self, response: Dict):
+        if "index" not in response:
+            raise NimbusException(f"'index' entry missing.")
+
+        if "continue" not in response:
+            raise NimbusException(f"'continue' entry missing.")
+
+        if not type(response["index"]) == int:
+            raise NimbusException(
+                f"The index must be a single integer, found {response['index']}"
+            )
+
+        if not type(response["continue"]) == bool:
+            raise NimbusException(
+                f"Continue must be a boolean value, found {response['index']}"
+            )
+
+        if not (
+            response["index"] >= 0
+            and response["index"] < len(self.content["objectives"])
+        ):
+            raise NimbusException(
+                (
+                    f"The index must be a positive integer less than "
+                    f"{len(self.content['objectives'])}, found {response['index']}."
+                )
+            )
+
+    @BaseRequest.response.setter
+    def response(self, response: Dict):
+        self.validator(response)
+        self._response = response
 
 
 class NimbusStopRequest(BaseRequest):
@@ -344,27 +442,6 @@ class NIMBUS(InteractiveMethod):
     def handle_save_request(
         self, request: NimbusSaveRequest
     ) -> Tuple[NimbusIntermediateSolutionsRequest, SimplePlotRequest]:
-        if not request.response["indices"]:
-            # nothing to save, continue to next state
-            pass
-
-        if (
-            len(request.response["indices"])
-            > len(request.content["objectives"])
-            or np.min(request.response["indices"]) < 0
-        ):
-            # wrong number of indices
-            print("ERROR 1")
-
-        if (
-            np.max(request.response["indices"])
-            >= len(request.content["objectives"])
-            or np.min(request.response["indices"]) < 0
-        ):
-            # out of bounds index
-            print("ERROR 2")
-
-        # save the solutions to the archive
         return self.save_solutions_to_archive(
             np.array(request.content["objectives"]),
             np.array(request.content["solutions"]),
@@ -376,36 +453,17 @@ class NIMBUS(InteractiveMethod):
     ) -> Tuple[
         Union[NimbusSaveRequest, NimbusMostPreferredRequest], SimplePlotRequest,
     ]:
-        if request.response["number_of_desired_solutions"] <= 0:
-            return self.request_most_preferred_solution(
-                np.array(request.content["solutions"]),
-                np.array(request.content["objectives"]),
+        if request.response["indices"]:
+            return self.compute_intermediate_solutions(
+                np.array(request.content["solutions"])[
+                    request.response["indices"]
+                ],
+                int(request.response["number_of_desired_solutions"]),
             )
 
-        if len(request.response["indices"]) != 2:
-            # if desired number of solutions is non zero, exactly two indices must be supplied!
-            print("ERROR 131231")
-            pass
-
-        if (
-            len(request.response["indices"])
-            > len(request.content["objectives"])
-            or len(request.response["indices"]) < 0
-        ):
-            # wrong number of indices
-            print("ERROR 1")
-
-        if (
-            np.max(request.response["indices"])
-            >= len(request.content["objectives"])
-            or np.min(request.response["indices"]) < 0
-        ):
-            # out of bounds index
-            print("ERROR 2")
-
-        return self.compute_intermediate_solutions(
-            np.array(request.content["solutions"])[request.response["indices"]],
-            int(request.response["number_of_desired_solutions"]),
+        return self.request_most_preferred_solution(
+            np.array(request.content["solutions"]),
+            np.array(request.content["objectives"]),
         )
 
     def handle_most_preferred_request(
@@ -413,19 +471,6 @@ class NIMBUS(InteractiveMethod):
     ) -> Tuple[
         Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest
     ]:
-        # check that the index in the response is a single integer
-        if not type(request.response["index"]) == int:
-            print("index not and index error")
-            exit()
-
-        # check the bounds of the index
-        if not (
-            request.response["index"] >= 0
-            and request.response["index"] < len(request.content["objectives"])
-        ):
-            print("index out of bounds error")
-            exit()
-
         self.update_current_solution(
             np.array(request.content["solutions"]),
             np.array(request.content["objectives"]),
@@ -736,50 +781,44 @@ class NIMBUS(InteractiveMethod):
 
         elif self._state == "archive":
             if type(request) != NimbusSaveRequest:
-                print("ERROR")
-            else:
-                requests = self.handle_save_request(request)
-                # succesfully generated the next request, change state
-                self._state = "intermediate"
-                return requests
+                raise NimbusException(
+                    f"Expected request type {type(NimbusSaveRequest)}, was {type(request)}."
+                )
+
+            requests = self.handle_save_request(request)
+            self._state = "intermediate"
+            return requests
 
         elif self._state == "intermediate":
             if type(request) != NimbusIntermediateSolutionsRequest:
-                print("ERROR")
-            else:
-                try:
-                    requests = self.handle_intermediate_solutions_request(
-                        request
-                    )
-                except Exception as e:
-                    # handle me
-                    print(e)
-                    raise e
+                raise NimbusException(
+                    f"Expected request type {type(NimbusIntermediateSolutionsRequest)}, was {type(request)}."
+                )
 
-                if type(requests[0]) == NimbusSaveRequest:
-                    self._state = "archive"
-                elif type(requests[0]) == NimbusMostPreferredRequest:
-                    self._state = "preferred"
+            requests = self.handle_intermediate_solutions_request(request)
 
-                return requests
+            if type(requests[0]) == NimbusSaveRequest:
+                self._state = "archive"
+            elif type(requests[0]) == NimbusMostPreferredRequest:
+                self._state = "preferred"
+
+            return requests
 
         elif self._state == "preferred":
             if type(request) != NimbusMostPreferredRequest:
-                # wrong type of request
-                print("wrong type of request expected in state 'preferred'")
-            else:
-                try:
-                    requests = self.handle_most_preferred_request(request)
-                except Exception as e:
-                    raise e
+                raise NimbusException(
+                    f"Expected request type {type(NimbusMostPreferredRequest)}, was {type(request)}."
+                )
 
-                if type(requests[0]) == NimbusStopRequest:
-                    self._state = "end"
+            requests = self.handle_most_preferred_request(request)
 
-                elif type(requests[0]) == NimbusClassificationRequest:
-                    self._state = "classify"
+            if type(requests[0]) == NimbusStopRequest:
+                self._state = "end"
 
-                return requests
+            elif type(requests[0]) == NimbusClassificationRequest:
+                self._state = "classify"
+
+            return requests
 
         elif self._state == "end":
             # end
@@ -787,9 +826,7 @@ class NIMBUS(InteractiveMethod):
 
         else:
             # unknown state error
-            print("error, unknown state")
-            print(self._state)
-            pass
+            raise NimbusException(f"Unknown state '{self._state}' encountered.")
 
 
 if __name__ == "__main__":
@@ -850,26 +887,23 @@ if __name__ == "__main__":
     reqs = method.request_classification()[0]
 
     response = {}
-    # TODO raise stuff
     response["classifications"] = ["<", "<=", "=", ">=", "0"]
     response["levels"] = [-6, -3, -5, 8, 0.349]
     response["number_of_solutions"] = 3
     reqs.response = response
     res_1 = method.step(reqs)[0]
-    res_1._response = {"indices": [0, 1]}
+    res_1.response = {"indices": [0, 1, 2]}
 
     res_2 = method.step(res_1)[0]
     response = {}
-    response["indices"] = [0, 1]
+    response["indices"] = []
     response["number_of_desired_solutions"] = 0
-    res_2._response = response
+    res_2.response = response
 
     res_3 = method.step(res_2)[0]
     response_pref = {}
-    response_pref["index"] = 2
+    response_pref["index"] = 1
     response_pref["continue"] = True
-    res_3._response = response_pref
+    res_3.response = response_pref
 
     res_4 = method.step(res_3)
-
-    print(res_3.content)
