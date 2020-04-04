@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from typing import List, Union, Tuple, Optional
+from typing import List, Union, Tuple, Optional, Dict
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_mcdm.utilities.solvers import payoff_table_method
@@ -18,8 +18,12 @@ from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_problem.Problem import MOProblem
 
 
+class NimbusException(Exception):
+    pass
+
+
 class NimbusClassificationRequest(BaseRequest):
-    def __init__(self, ref: np.ndarray):
+    def __init__(self, method, ref: np.ndarray):
         msg = (
             "Please classify each of the objective values in one of the following categories:"
             "\n\t1. values should improve '<'"
@@ -31,6 +35,9 @@ class NimbusClassificationRequest(BaseRequest):
             "the value in the vector at the objective's position is ignored. Suppy also the number of maximum"
             "solutions to be generated."
         )
+
+        self._method = method
+        self._valid_classifications = ["<", "<=", "=", ">=", "0"]
         content = {
             "message": msg,
             "objective_values": ref,
@@ -41,6 +48,90 @@ class NimbusClassificationRequest(BaseRequest):
         super().__init__(
             "classification_preference", "required", content=content
         )
+
+    def validator(self, response: Dict) -> None:
+        if not "classifications" in response:
+            raise NimbusException("'classifications' entry missing.")
+
+        if not "levels" in response:
+            raise NimbusException("'levels' entry missing.")
+
+        if not "number_of_solutions" in response:
+            raise NimbusException("'number_of_solutions' entry missing.")
+
+        # check the classifications
+        is_valid_cls = map(
+            lambda x: x in self._valid_classifications,
+            response["classifications"],
+        )
+
+        if not all(list(is_valid_cls)):
+            raise NimbusException(
+                f"Invalid classificaiton found in {response['classifications']}"
+            )
+
+        # check the levels
+        if (
+            len(np.array(response["levels"]).squeeze())
+            != self._method._problem.n_of_objectives
+        ):
+            raise NimbusException(
+                f"Wrong number of levels supplied in {response['levels']}"
+            )
+
+        improve_until_inds = np.where(
+            np.array(response["classifications"]) == "<="
+        )[0]
+
+        impaire_until_inds = np.where(
+            np.array(response["classifications"]) == ">="
+        )[0]
+
+        if len(improve_until_inds) > 0:
+            # some objectives classified to be improved until some level
+            if not np.all(
+                np.array(response["levels"])[improve_until_inds]
+                >= self._method._ideal[improve_until_inds]
+            ) or not np.all(
+                np.array(response["levels"])[improve_until_inds]
+                <= self._method._nadir[improve_until_inds]
+            ):
+                raise NimbusException(
+                    f"Given levels must be between the nadir and ideal points!"
+                )
+
+        if len(impaire_until_inds) > 0:
+            # some objectives classified to be improved until some level
+            if not np.all(
+                np.array(response["levels"])[impaire_until_inds]
+                >= self._method._ideal[impaire_until_inds]
+            ) or not np.all(
+                np.array(response["levels"])[impaire_until_inds]
+                <= self._method._nadir[impaire_until_inds]
+            ):
+                raise NimbusException(
+                    f"Given levels must be between the nadir and ideal points!"
+                )
+
+        # check maximum number of solutions
+        if (
+            response["number_of_solutions"] > 4
+            or response["number_of_solutions"] < 1
+        ):
+            raise NimbusException(
+                f"The number of solutions must be between 1 and 4."
+            )
+
+    @BaseRequest.response.setter
+    def response(self, response):
+        print("asdfasdfsf")
+        try:
+            self.validator(response)
+        except Exception as e:
+            print("asdfasdfsf")
+            raise e
+        else:
+            self._response = response
 
 
 class NimbusSaveRequest(BaseRequest):
@@ -189,79 +280,15 @@ class NIMBUS(InteractiveMethod):
         self,
     ) -> Tuple[NimbusClassificationRequest, SimplePlotRequest]:
         return (
-            NimbusClassificationRequest(self._current_objectives.squeeze()),
+            NimbusClassificationRequest(
+                self, self._current_objectives.squeeze()
+            ),
             None,
         )
 
     def handle_classification_request(
         self, request: NimbusClassificationRequest
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
-        # check the classifications
-        is_valid_cls = map(
-            lambda x: x in ["<", "<=", "=", ">=", "0"],
-            request.response["classifications"],
-        )
-        if not all(list(is_valid_cls)):
-            print("not fine")
-        else:
-            print("fine")
-
-        # check the levels
-        if (
-            len(np.array(request.response["levels"]).squeeze())
-            != self._problem.n_of_objectives
-        ):
-            print("not fine")
-        else:
-            print("fine")
-
-        # check the levels have the right dimensions
-        if (
-            len(np.array(request.response["levels"]).squeeze())
-            != self._problem.n_of_objectives
-        ):
-            print("bad levels")
-
-        improve_until_inds = np.where(
-            np.array(request.response["classifications"]) == "<="
-        )[0]
-        print(improve_until_inds)
-
-        impaire_until_inds = np.where(
-            np.array(request.response["classifications"]) == ">="
-        )[0]
-        print(impaire_until_inds)
-
-        if len(improve_until_inds) > 0:
-            # some objectives classified to be improved until some level
-            if not np.all(
-                np.array(request.response["levels"])[improve_until_inds]
-                >= self._ideal[improve_until_inds]
-            ) or not np.all(
-                np.array(request.response["levels"])[improve_until_inds]
-                <= self._nadir[improve_until_inds]
-            ):
-                print("bad improve levels!")
-            else:
-                print("fine improve levels")
-        else:
-            print("i'm empty")
-
-        if len(impaire_until_inds) > 0:
-            # some objectives classified to be improved until some level
-            if not np.all(
-                np.array(request.response["levels"])[impaire_until_inds]
-                >= self._ideal[impaire_until_inds]
-            ) or not np.all(
-                np.array(request.response["levels"])[impaire_until_inds]
-                <= self._nadir[impaire_until_inds]
-            ):
-                print("bad impair levels!")
-            else:
-                print("fine impair levels")
-        else:
-            print("i'm empty")
-
         improve_inds = np.where(
             np.array(request.response["classifications"]) == "<"
         )[0]
@@ -274,14 +301,13 @@ class NIMBUS(InteractiveMethod):
             np.array(request.response["classifications"]) == "0"
         )[0]
 
-        # check maximum number of solutions
-        if (
-            request.response["number_of_solutions"] > 4
-            or request.response["number_of_solutions"] < 1
-        ):
-            print("not fine")
-        else:
-            print("fine")
+        improve_until_inds = np.where(
+            np.array(request.response["classifications"]) == "<="
+        )[0]
+
+        impaire_until_inds = np.where(
+            np.array(request.response["classifications"]) == ">="
+        )[0]
 
         # calculate the new solutions
         return self.calculate_new_solutions(
@@ -304,7 +330,7 @@ class NIMBUS(InteractiveMethod):
         if (
             len(request.response["indices"])
             > len(request.content["objectives"])
-            or len(request.response["indices"]) < 0
+            or np.min(request.response["indices"]) < 0
         ):
             # wrong number of indices
             print("ERROR 1")
@@ -622,8 +648,6 @@ class NIMBUS(InteractiveMethod):
             cons_1,
             method=self._scalar_method,
         )
-        # TODO: fix me
-        solver_1._use_scipy = True
 
         res_1 = solver_1.minimize(self._current_solution)
         results.append(res_1)
@@ -660,8 +684,6 @@ class NIMBUS(InteractiveMethod):
                 cons_2,
                 method=self._scalar_method,
             )
-            # TODO: fix me
-            solver_2._use_scipy = True
 
             res_2 = solver_2.minimize(self._current_solution)
             results.append(res_2)
@@ -682,8 +704,6 @@ class NIMBUS(InteractiveMethod):
                 cons_2,
                 method=self._scalar_method,
             )
-            # TODO: fix me
-            solver_3._use_scipy = True
 
             res_3 = solver_3.minimize(self._current_solution)
             results.append(res_3)
@@ -704,8 +724,6 @@ class NIMBUS(InteractiveMethod):
                 cons_2,
                 method=self._scalar_method,
             )
-            # TODO: fix me
-            solver_4._use_scipy = True
 
             res_4 = solver_4.minimize(self._current_solution)
             results.append(res_4)
@@ -766,28 +784,19 @@ class NIMBUS(InteractiveMethod):
     ]:
         if self._state == "classify":
             if type(request) != NimbusClassificationRequest:
-                print("ERROR")
-            else:
-                try:
-                    requests = self.handle_classification_request(request)
-                except Exception as e:
-                    raise e
-                    pass
+                raise NimbusException(
+                    f"Expected request type {type(NimbusClassificationRequest)}, was {type(request)}."
+                )
 
-                # succesfully generated new requests, change state
-                self._state = "archive"
-                return requests
+            requests = self.handle_classification_request(request)
+            self._state = "archive"
+            return requests
 
         elif self._state == "archive":
             if type(request) != NimbusSaveRequest:
                 print("ERROR")
             else:
-                try:
-                    requests = self.handle_save_request(request)
-                except Exception as e:
-                    # handle me
-                    print(e)
-                    pass
+                requests = self.handle_save_request(request)
                 # succesfully generated the next request, change state
                 self._state = "intermediate"
                 return requests
@@ -895,21 +904,17 @@ if __name__ == "__main__":
         variables=varsl, objectives=[f1, f2, f3, f4, f5], constraints=[c1]
     )
 
-    scipy_de_method = ScalarMethod(
-        lambda x, _, **y: differential_evolution(x, **y),
-        method_args={"polish": False},
-    )
-
-    method = NIMBUS(problem, scalar_method=scipy_de_method)
+    method = NIMBUS(problem, scalar_method="scipy_de")
     reqs = method.request_classification()[0]
 
     response = {}
+    # TODO raise stuff
     response["classifications"] = ["<", "<=", "=", ">=", "0"]
     response["levels"] = [-6, -3, -5, 8, 0.349]
-    response["number_of_solutions"] = 4
-    reqs._response = response
+    response["number_of_solutions"] = 3
+    reqs.response = response
     res_1 = method.step(reqs)[0]
-    res_1._response = {"indices": [0, 2]}
+    res_1._response = {"indices": [0, 1]}
 
     res_2 = method.step(res_1)[0]
     response = {}
@@ -925,6 +930,4 @@ if __name__ == "__main__":
 
     res_4 = method.step(res_3)
 
-    print(res_4)
-    exit()
-    res_4 = method.step(res_3)
+    print(res_3.content)
