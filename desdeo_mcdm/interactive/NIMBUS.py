@@ -323,6 +323,12 @@ class NIMBUS(InteractiveMethod):
     def __init__(
         self, problem: MOProblem, scalar_method: Optional[ScalarMethod] = None
     ):
+        """   
+        Args:
+            problem (MOProblem): The problem to be solved.
+            scalar_method (Optional[ScalarMethod], optional): The method used to solve
+            the various ASF minimization problems present in the method. Defaults to None.
+        """
         # check if ideal and nadir are defined
         if problem.ideal is None or problem.nadir is None:
             # TODO: use same method as defined in scalar_method
@@ -372,6 +378,12 @@ class NIMBUS(InteractiveMethod):
         super().__init__(problem)
 
     def start(self) -> Tuple[NimbusClassificationRequest, SimplePlotRequest]:
+        """Return the first request to start iterating NIMBUS.
+        
+        Returns:
+            Tuple[NimbusClassificationRequest, SimplePlotRequest]: The first request and
+            and a plot request to visualize relevant data.
+        """
         return self.request_classification()
 
     def request_classification(
@@ -408,6 +420,16 @@ class NIMBUS(InteractiveMethod):
     def handle_classification_request(
         self, request: NimbusClassificationRequest
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
+        """Handles a classification request.
+        
+        Args:
+            request (NimbusClassificationReuest): A classification request with the
+            response attribute set.
+        
+        Returns:
+            Tuple[NimbusSaveRequest, SimplePlotRequest]: A NIMBUS save request and a plot request
+            with the solutions the decision maker can choose from to save for alter use.
+        """
         improve_inds = np.where(
             np.array(request.response["classifications"]) == "<"
         )[0]
@@ -442,6 +464,17 @@ class NIMBUS(InteractiveMethod):
     def handle_save_request(
         self, request: NimbusSaveRequest
     ) -> Tuple[NimbusIntermediateSolutionsRequest, SimplePlotRequest]:
+        """Handles a save request.
+        
+        Args:
+            request (NimbusSaveRequest): A save request with the response attribute set.
+        
+        Returns:
+            Tuple[NimbusIntermediateSolutionsRequest, SimplePlotRequest]: Return an
+            intermediate solution request where the decision maker can specify whether they
+            would like to see intermediate solution between two previously computed solutions.
+            The plot request has the available solutions.
+        """
         return self.save_solutions_to_archive(
             np.array(request.content["objectives"]),
             np.array(request.content["solutions"]),
@@ -453,6 +486,18 @@ class NIMBUS(InteractiveMethod):
     ) -> Tuple[
         Union[NimbusSaveRequest, NimbusMostPreferredRequest], SimplePlotRequest,
     ]:
+        """Handles an intermediate solutions request.
+        
+        Args:
+            request (NimbusIntermediateSolutionsRequest): A NIMBUS intermediate solutions
+            request with the response attribute set.
+        
+        Returns:
+            Tuple[Union[NimbusSaveRequest, NimbusMostPreferredRequest], SimplePlotRequest,]:
+            Return either a save request or a preferred solution request. The former is returned if the
+            decision maker wishes to see intermediate points, the latter otherwise. Also a plot request is
+            returned with the solutions available in it.
+        """
         if request.response["indices"]:
             return self.compute_intermediate_solutions(
                 np.array(request.content["solutions"])[
@@ -471,6 +516,18 @@ class NIMBUS(InteractiveMethod):
     ) -> Tuple[
         Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest
     ]:
+        """Handles a preferres solution request.
+        
+        Args:
+            request (NimbusMostPreferredRequest): A NIMBUS preferred solution request with the
+            response attribute set.
+        
+        Returns:
+            Tuple[Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest]:
+            Return a classificaiton request if the decision maker wishes to continue. If the
+            decision maker wishes to stop, return a stop request. Also return a plot 
+            request with all the solutions saved so far.
+        """
         self.update_current_solution(
             np.array(request.content["solutions"]),
             np.array(request.content["objectives"]),
@@ -484,6 +541,12 @@ class NIMBUS(InteractiveMethod):
             return self.request_classification()
 
     def request_stop(self) -> Tuple[NimbusStopRequest, SimplePlotRequest]:
+        """Returns a stop request.
+        
+        Returns:
+            Tuple[NimbusStopRequest, SimplePlotRequest]: A stop request and a plot
+            request with the final solution chosen in it.
+        """
         request = NimbusStopRequest(
             self._current_solution, self._current_objectives
         )
@@ -509,6 +572,20 @@ class NIMBUS(InteractiveMethod):
     def compute_intermediate_solutions(
         self, solutions: np.ndarray, n_desired: int,
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
+        """Computs intermediate solution between two solutions computed earlier.
+        
+        Args:
+            solutions (np.ndarray): The solutions between which the intermediat solutions should
+            be computed.
+            n_desired (int): The number of intermediate solutions desired.
+        
+        Raises:
+            NimbusException
+        
+        Returns:
+            Tuple[NimbusSaveRequest, SimplePlotRequest]: A save request with the compured intermediate
+            points, and a plot request to visualize said points.
+        """
         # vector between the two solutions
         between = solutions[0] - solutions[1]
         norm = np.linalg.norm(between)
@@ -554,8 +631,6 @@ class NIMBUS(InteractiveMethod):
                 cons,
                 method=self._scalar_method,
             )
-            # TODO: fix me
-            solver._use_scipy = True
 
             res = solver.minimize(self._current_solution)
             intermediate_solutions[i] = res["x"]
@@ -579,6 +654,20 @@ class NIMBUS(InteractiveMethod):
         decision_variables: np.ndarray,
         indices: List[int],
     ) -> Tuple[NimbusIntermediateSolutionsRequest, None]:
+        """Save solutions to the archive. Saves also the corresponding objective function
+        values.
+        
+        Args:
+            objectives (np.ndarray): Available objectives.
+            decision_variables (np.ndarray): Available solutions.
+            indices (List[int]): Indices of the solutions to be saved.
+        
+        Returns:
+            Tuple[NimbusIntermediateSolutionsRequest, None]: An intermediate solutins request asking the
+            decision maker whether they would like to generate intermediata solutions between two existing solutions.
+            Also returns a plot request to visualize the available solutions between which the intermediate solutions
+            should be computed.
+        """
         self._archive_objectives.extend(list(objectives[indices]))
         self._archive_solutions.extend(list(decision_variables[indices]))
 
@@ -608,6 +697,23 @@ class NIMBUS(InteractiveMethod):
         impaire_until_inds: np.ndarray,
         free_inds: np.ndarray,
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
+        """Calcualtes new solutions based on classifications supplied by the decision maker by
+            solving ASF problems.
+        
+        Args:
+            number_of_solutions (int): Number of solutions, should be between 1 and 4.
+            levels (np.ndarray): Aspiration and upper bounds relevant to the some of the classifications.
+            improve_inds (np.ndarray): Indices corresponding to the objectives which should be improved.
+            improve_until_inds (np.ndarray): Like above, but improved until an aspiration level is reached.
+            acceptable_inds (np.ndarray): Indices of objectives which are acceptable as they are now.
+            impaire_until_inds (np.ndarray): Indices of objectives which may be impaired until an upper limit is
+            reached.
+            free_inds (np.ndarray): Indices of objectives which may change freely.
+        
+        Returns:
+            Tuple[NimbusSaveRequest, SimplePlotRequest]: A save request with the newly computed soutions, and 
+            a plot request to visualize said solutions.
+        """
         results = []
 
         # always computed
@@ -752,7 +858,7 @@ class NIMBUS(InteractiveMethod):
 
         return None
 
-    def step(
+    def iterate(
         self,
         request: Union[
             NimbusClassificationRequest,
@@ -769,6 +875,19 @@ class NIMBUS(InteractiveMethod):
         ],
         Union[SimplePlotRequest, None],
     ]:
+        """Implements a finite state machine to iterate over the different steps defined in Synchronous NIMBUS based on a supllied request.
+        
+        Args:
+            request (Union[NimbusClassificationRequest,NimbusSaveRequest,NimbusIntermediateSolutionsRequest,NimbusMostPreferredRequest,NimbusStopRequest,]):
+            A request based on the next step in the NIMBUS algorithm is taken.
+        
+        Raises:
+            NimbusException: If a wrong type of request is supllied based on the current state NIMBUS is in.
+        
+        Returns:
+            Tuple[Union[NimbusClassificationRequest,NimbusSaveRequest,NimbusIntermediateSolutionsRequest,],Union[SimplePlotRequest, None],]:
+            The next logically sound request.
+        """
         if self._state == "classify":
             if type(request) != NimbusClassificationRequest:
                 raise NimbusException(
@@ -891,19 +1010,19 @@ if __name__ == "__main__":
     response["levels"] = [-6, -3, -5, 8, 0.349]
     response["number_of_solutions"] = 3
     reqs.response = response
-    res_1 = method.step(reqs)[0]
+    res_1 = method.iterate(reqs)[0]
     res_1.response = {"indices": [0, 1, 2]}
 
-    res_2 = method.step(res_1)[0]
+    res_2 = method.iterate(res_1)[0]
     response = {}
     response["indices"] = []
     response["number_of_desired_solutions"] = 0
     res_2.response = response
 
-    res_3 = method.step(res_2)[0]
+    res_3 = method.iterate(res_2)[0]
     response_pref = {}
     response_pref["index"] = 1
     response_pref["continue"] = True
     res_3.response = response_pref
 
-    res_4 = method.step(res_3)
+    res_4 = method.iterate(res_3)
