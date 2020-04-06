@@ -14,7 +14,12 @@ mpl_logger.setLevel(logging.WARNING)
 from desdeo_problem.Problem import MOProblem
 
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
+from desdeo_tools.scalarization.ASF import PointMethodASF, ASFBase
 from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
+
+
+class MCDMUtilityException(Exception):
+    pass
 
 
 def weighted_scalarizer(xs: np.ndarray, ws: np.ndarray) -> np.ndarray:
@@ -132,6 +137,176 @@ def payoff_table_method(
     )
 
 
+def solve_pareto_front_representation_general(
+    objective_evaluator: Callable[[np.ndarray], np.ndarray],
+    n_of_objectives: int,
+    variable_bounds: np.ndarray,
+    step: Optional[Union[np.ndarray, float]] = 0.1,
+    eps: Optional[float] = 1e-6,
+    ideal: Optional[np.ndarray] = None,
+    nadir: Optional[np.ndarray] = None,
+    constraint_evaluator: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    solver_method: Optional[Union[ScalarMethod, str]] = "scipy_de",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Computes a representation of a Pareto efficient front from a
+    multiobjective minimizatino problem. Does so by generating an evenly spaced
+    set of reference points (in the objective space), in the space spanned by
+    the supplied ideal and nadir points. The generated reference points are
+    then used to formulate achievement scalaraization problems, which when
+    solved, yield a representation of a Pareto efficient solution.
+    
+    Args:
+        objective_evaluator (Callable[[np.ndarray], np.ndarray]): A vector
+        valued function returning objective values given an array of decision
+        variables.
+        n_of_objectives (int): Numbr of objectives returned by
+        objective_evaluator.
+        variable_bounds (np.ndarray): The upper and lower bounds of the
+        decision variables. Bound for each variable should be on the rows,
+        with the first column containing lower bounds, and the second column
+        upper bounds. Use np.inf to indicate no bounds.
+        step (Optional[Union[np.ndarray, float]], optional): Etiher an float
+        or an array of floats. If a single float is given, generates
+        reference points with the objectives having values a step apart
+        between the ideal and nadir points. If an array of floats is given,
+        use the steps defined in the array for each objective's values.
+        Default to 0.1.
+        eps (Optional[float], optional): An offset to be added to the nadir
+        value to keep the nadir inside the range when generating reference
+        points. Defaults to 1e-6.
+        ideal (Optional[np.ndarray], optional): The ideal point of the
+        problem being solved. Defaults to None.
+        nadir (Optional[np.ndarray], optional): The nadir point of the
+        problem being solved. Defaults to None.
+        constraint_evaluator (Optional[Callable[[np.ndarray], np.ndarray]],
+        optional): An evaluator returning values for the constraints defined
+        for the problem. A negative value for a constraint indicates a breach
+        of that constraint. Defaults to None.
+        solver_method (Optional[Union[ScalarMethod, str]], optional): The
+        method used to minimize the achievement scalarization problems
+        arising when calculating Pareto efficient solutions. Defaults to
+        "scipy_de".
+    
+    Raises:
+        MCDMUtilityException: Mismatching sizes of the supplied ideal and
+        nadir points between the step, when step is an array. Or the type of
+        step is something else than np.ndarray of float.
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: A tuple containing representationns of
+        the Pareto optimal variable values, and the corresponsing objective
+        values.
+    """
+    if ideal is None or nadir is None:
+        # compure ideal and nadir using payoff table
+        ideal, nadir = payoff_table_method_general(
+            objective_evaluator,
+            n_of_objectives,
+            variable_bounds,
+            constraint_evaluator,
+        )
+
+    # use ASF to (almost) gurantee Pareto optimality.
+    asf = PointMethodASF(nadir, ideal)
+
+    scalarizer = Scalarizer(
+        objective_evaluator, asf, scalarizer_args={"reference_point": None}
+    )
+    solver = ScalarMinimizer(
+        scalarizer, bounds=variable_bounds, method=solver_method
+    )
+
+    print("forming mesh...")
+    if type(step) is float:
+        slices = [
+            slice(start, stop + eps, step)
+            for (start, stop) in zip(ideal, nadir)
+        ]
+
+    elif type(step) is np.ndarray:
+        if not ideal.shape == nadir.shape == step.shape:
+            raise MCDMUtilityException(
+                "The shapes of the supplied step array does not match the "
+                "shape of the ideal and nadir points."
+            )
+        slices = [
+            slice(start, stop + eps, s)
+            for (start, stop, s) in zip(ideal, nadir, step)
+        ]
+
+    else:
+        raise MCDMUtilityException(
+            "step must be either a numpy array or an float."
+        )
+
+    z_mesh = np.mgrid[slices].reshape(len(ideal), -1).T
+
+    p_front_objectives = np.zeros(z_mesh.shape)
+    p_front_variables = np.zeros(
+        (len(p_front_objectives), len(variable_bounds.squeeze()))
+    )
+
+    for i, z in enumerate(z_mesh):
+        scalarizer._scalarizer_args = {"reference_point": z}
+        res = solver.minimize(None)
+        p_front_objectives[i] = objective_evaluator(res["x"])
+        p_front_variables[i] = res["x"]
+
+    return p_front_variables, p_front_objectives
+
+
+def solve_pareto_front_representation(
+    problem: MOProblem,
+    step: Optional[Union[np.ndarray, float]] = 0.1,
+    eps: Optional[float] = 1e-6,
+    solver_method: Optional[Union[ScalarMethod, str]] = "scipy_de",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Pass through to solve_pareto_front_representation_general when the
+    problem for which the front is being calculated for is defined as an
+    MOProblem object.
+    
+    Computes a representation of a Pareto efficient front
+    from a multiobjective minimizatino problem. Does so by generating an
+    evenly spaced set of reference points (in the objective space), in the
+    space spanned by the supplied ideal and nadir points. The generated
+    reference points are then used to formulate achievement scalaraization
+    problems, which when solved, yield a representation of a Pareto efficient
+    solution.
+    
+    Args:
+        problem (MOProblem): The multiobjective minimization problem for which the front is to be solved for.
+        step (Optional[Union[np.ndarray, float]], optional): Etiher an float
+        or an array of floats. If a single float is given, generates
+        reference points with the objectives having values a step apart
+        between the ideal and nadir points. If an array of floats is given,
+        use the steps defined in the array for each objective's values.
+        Default to 0.1.
+        eps (Optional[float], optional): An offset to be added to the nadir
+        value to keep the nadir inside the range when generating reference
+        points. Defaults to 1e-6.
+        solver_method (Optional[Union[ScalarMethod, str]], optional): The
+        method used to minimize the achievement scalarization problems
+        arising when calculating Pareto efficient solutions. Defaults to
+        "scipy_de".
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: A tuple containing representationns of
+        the Pareto optimal variable values, and the corresponsing objective
+        values.
+    """
+    return solve_pareto_front_representation_general(
+        lambda x: problem.evaluate(x).objectives,
+        problem.n_of_objectives,
+        problem.get_variable_bounds(),
+        step,
+        eps,
+        problem.ideal,
+        problem.nadir,
+        lambda x: problem.evaluate(x).constraints.squeeze(),
+        solver_method,
+    )
+
+
 if __name__ == "__main__":
     from desdeo_problem.Problem import MOProblem
     from desdeo_problem.Objective import _ScalarObjective
@@ -184,21 +359,24 @@ if __name__ == "__main__":
     problem = MOProblem(
         variables=varsl, objectives=[f1, f2, f3, f4, f5], constraints=[c1]
     )
-    res = payoff_table_method(problem)
-    print(res)
-    # scalarizer = Scalarizer(
-    #     lambda xs: problem.evaluate(xs).objectives,
-    #     weighted_scalarizer,
-    #     scalarizer_args={"ws": np.ones(5)},
-    # )
-    # # res = scalarizer(np.array([[0.5, 0.5], [0.4, 0.4]]))
-    # # print(problem.get_variable_bounds())
-    # solver = ScalarMinimizer(
-    #     scalarizer,
-    #     problem.get_variable_bounds(),
-    #     # lambda xs: problem.evaluate(xs).constraints,
-    #     None,
-    #     None,
-    # )
-    # opt_res = solver.minimize(np.array([0.5, 0.5]))
-    # print(opt_res.x)
+    # res = payoff_table_method(problem)
+    # print(res)
+
+    res = solve_pareto_front_representation_general(
+        lambda x: problem.evaluate(x).objectives,
+        problem.n_of_objectives,
+        problem.get_variable_bounds(),
+        step=2.0,
+        eps=1e-6,
+        ideal=problem.ideal,
+        nadir=problem.nadir,
+        constraint_evaluator=lambda x: problem.evaluate(
+            x
+        ).constraints.squeeze(),
+    )
+
+    print(res[0].shape)
+
+    res_2 = solve_pareto_front_representation(problem, step=2.0, eps=1e-6)
+
+    print(res_2[0].shape)
