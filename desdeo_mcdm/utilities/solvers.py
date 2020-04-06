@@ -93,7 +93,7 @@ def payoff_table_method_general(
         opt_res = solver.minimize(initial_guess)
         if not opt_res["success"]:
             print(
-                "Unsuccessfull optimization encountered while computing a payoff table!"
+                "Unsuccessful optimization encountered while computing a payoff table!"
             )
         po_table[i] = objective_evaluator(opt_res["x"])
 
@@ -216,7 +216,6 @@ def solve_pareto_front_representation_general(
         scalarizer, bounds=variable_bounds, method=solver_method
     )
 
-    print("forming mesh...")
     if type(step) is float:
         slices = [
             slice(start, stop + eps, step)
@@ -294,6 +293,11 @@ def solve_pareto_front_representation(
         the Pareto optimal variable values, and the corresponsing objective
         values.
     """
+    if problem.n_of_constraints > 0:
+        constraints = lambda x: problem.evaluate(x).constraints.squeeze()
+    else:
+        constraints = None
+
     return solve_pareto_front_representation_general(
         lambda x: problem.evaluate(x).objectives,
         problem.n_of_objectives,
@@ -302,7 +306,7 @@ def solve_pareto_front_representation(
         eps,
         problem.ideal,
         problem.nadir,
-        lambda x: problem.evaluate(x).constraints.squeeze(),
+        constraints,
         solver_method,
     )
 
@@ -356,9 +360,7 @@ if __name__ == "__main__":
         lower_bounds=[0.3, 0.3],
         upper_bounds=[1.0, 1.0],
     )
-    problem = MOProblem(
-        variables=varsl, objectives=[f1, f2, f3, f4, f5], constraints=[c1]
-    )
+    problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5],)
     # res = payoff_table_method(problem)
     # print(res)
 
@@ -370,9 +372,7 @@ if __name__ == "__main__":
         eps=1e-6,
         ideal=problem.ideal,
         nadir=problem.nadir,
-        constraint_evaluator=lambda x: problem.evaluate(
-            x
-        ).constraints.squeeze(),
+        constraint_evaluator=None,
     )
 
     print(res[0].shape)
