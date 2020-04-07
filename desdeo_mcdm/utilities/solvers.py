@@ -93,7 +93,7 @@ def payoff_table_method_general(
         opt_res = solver.minimize(initial_guess)
         if not opt_res["success"]:
             print(
-                "Unsuccessful optimization encountered while computing a payoff table!"
+                "Unsuccessful optimization result encountered while computing a payoff table!"
             )
         po_table[i] = objective_evaluator(opt_res["x"])
 
