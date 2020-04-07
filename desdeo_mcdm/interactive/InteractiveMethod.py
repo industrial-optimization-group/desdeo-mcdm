@@ -10,6 +10,3 @@ from desdeo_problem.Problem import MOProblem
 class InteractiveMethod:
     def __init__(self, problem: MOProblem):
         self._problem = problem
-
-    def requests(self) -> List[BaseRequest]:
-        pass
