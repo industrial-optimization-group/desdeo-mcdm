@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-desdeo-tools = { git = "https://github.com/industrial-optimization-group/desdeo-tools", branch="master" }
+desdeo-tools = { git = "https://github.com/industrial-optimization-group/desdeo-tools", branch="discrete_minimizer" }
 desdeo-problem = "^0.13.0"
 
 [tool.poetry.dev-dependencies]

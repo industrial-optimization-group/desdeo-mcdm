@@ -153,7 +153,8 @@ def solve_pareto_front_representation_general(
     set of reference points (in the objective space), in the space spanned by
     the supplied ideal and nadir points. The generated reference points are
     then used to formulate achievement scalaraization problems, which when
-    solved, yield a representation of a Pareto efficient solution.
+    solved, yield a representation of a Pareto efficient solution. The result
+    is guaranteed to contain only non-dominated solutions.
     
     Args:
         objective_evaluator (Callable[[np.ndarray], np.ndarray]): A vector
@@ -248,10 +249,37 @@ def solve_pareto_front_representation_general(
     for i, z in enumerate(z_mesh):
         scalarizer._scalarizer_args = {"reference_point": z}
         res = solver.minimize(None)
-        p_front_objectives[i] = objective_evaluator(res["x"])
-        p_front_variables[i] = res["x"]
 
-    return p_front_variables, p_front_objectives
+        if not res["success"]:
+            print("Non successfull optimization")
+            p_front_objectives[i] = np.nan
+            p_front_variables[i] = np.nan
+            continue
+
+        # check for dominance, accept only non-dominated solutions
+        f_i = objective_evaluator(res["x"])
+        if not np.all(
+            f_i
+            > p_front_objectives[:i][
+                ~np.all(np.isnan(p_front_objectives[:i]), axis=1)
+            ]
+        ):
+            p_front_objectives[i] = f_i
+            p_front_variables[i] = res["x"]
+        elif i < 1:
+            p_front_objectives[i] = f_i
+            p_front_variables[i] = res["x"]
+        else:
+            print(
+                f"{f_i} is dominated by {p_front_objectives[:i][np.all(f_i > p_front_objectives[:i], axis=1)]}"
+            )
+            p_front_objectives[i] = np.nan
+            p_front_variables[i] = np.nan
+
+    return (
+        p_front_variables[~np.all(np.isnan(p_front_variables), axis=1)],
+        p_front_objectives[~np.all(np.isnan(p_front_objectives), axis=1)],
+    )
 
 
 def solve_pareto_front_representation(
@@ -313,70 +341,80 @@ def solve_pareto_front_representation(
 
 if __name__ == "__main__":
     from desdeo_problem.Problem import MOProblem
+    from desdeo_problem.testproblems.TestProblems import test_problem_builder
     from desdeo_problem.Objective import _ScalarObjective
     from desdeo_problem.Variable import variable_builder
     from desdeo_problem.Constraint import ScalarConstraint
     from desdeo_tools.scalarization.Scalarizer import Scalarizer
+    from desdeo_tools.solver.ScalarSolver import ScalarMethod
 
-    # create the problem
-    def f_1(x):
-        res = 4.07 + 2.27 * x[:, 0]
-        return -res
+    from scipy.optimize import differential_evolution
 
-    def f_2(x):
-        res = (
-            2.60
-            + 0.03 * x[:, 0]
-            + 0.02 * x[:, 1]
-            + 0.01 / (1.39 - x[:, 0] ** 2)
-            + 0.30 / (1.39 - x[:, 1] ** 2)
-        )
-        return -res
+    # # create the problem
+    # def f_1(x):
+    #     res = 4.07 + 2.27 * x[:, 0]
+    #     return -res
 
-    def f_3(x):
-        res = 8.21 - 0.71 / (1.09 - x[:, 0] ** 2)
-        return -res
+    # def f_2(x):
+    #     res = (
+    #         2.60
+    #         + 0.03 * x[:, 0]
+    #         + 0.02 * x[:, 1]
+    #         + 0.01 / (1.39 - x[:, 0] ** 2)
+    #         + 0.30 / (1.39 - x[:, 1] ** 2)
+    #     )
+    #     return -res
 
-    def f_4(x):
-        res = 0.96 - 0.96 / (1.09 - x[:, 1] ** 2)
-        return -res
+    # def f_3(x):
+    #     res = 8.21 - 0.71 / (1.09 - x[:, 0] ** 2)
+    #     return -res
 
-    def f_5(x):
-        return np.max([np.abs(x[:, 0] - 0.65), np.abs(x[:, 1] - 0.65)], axis=0)
+    # def f_4(x):
+    #     res = 0.96 - 0.96 / (1.09 - x[:, 1] ** 2)
+    #     return -res
 
-    def c_1(x, f=None):
-        x = x.squeeze()
-        return (x[0] + x[1]) - 0.2
+    # def f_5(x):
+    #     return np.max([np.abs(x[:, 0] - 0.65), np.abs(x[:, 1] - 0.65)], axis=0)
 
-    f1 = _ScalarObjective(name="f1", evaluator=f_1)
-    f2 = _ScalarObjective(name="f2", evaluator=f_2)
-    f3 = _ScalarObjective(name="f3", evaluator=f_3)
-    f4 = _ScalarObjective(name="f4", evaluator=f_4)
-    f5 = _ScalarObjective(name="f5", evaluator=f_5)
-    c1 = ScalarConstraint("c1", 2, 5, evaluator=c_1)
-    varsl = variable_builder(
-        ["x_1", "x_2"],
-        initial_values=[0.5, 0.5],
-        lower_bounds=[0.3, 0.3],
-        upper_bounds=[1.0, 1.0],
+    # def c_1(x, f=None):
+    #     x = x.squeeze()
+    #     return (x[0] + x[1]) - 0.2
+
+    # f1 = _ScalarObjective(name="f1", evaluator=f_1)
+    # f2 = _ScalarObjective(name="f2", evaluator=f_2)
+    # f3 = _ScalarObjective(name="f3", evaluator=f_3)
+    # f4 = _ScalarObjective(name="f4", evaluator=f_4)
+    # f5 = _ScalarObjective(name="f5", evaluator=f_5)
+    # c1 = ScalarConstraint("c1", 2, 5, evaluator=c_1)
+    # varsl = variable_builder(
+    #     ["x_1", "x_2"],
+    #     initial_values=[0.5, 0.5],
+    #     lower_bounds=[0.3, 0.3],
+    #     upper_bounds=[1.0, 1.0],
+    # )
+    # problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5],)
+
+    scalar_method = ScalarMethod(
+        lambda x, _, **ys: differential_evolution(x, **ys),
+        method_args={"polish": True, "maxiter": 1000},
+        use_scipy=True,
     )
-    problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5],)
-    # res = payoff_table_method(problem)
-    # print(res)
+
+    problem = test_problem_builder("DTLZ1", 3, 2)
+    print(problem.get_variable_bounds())
+    problem.ideal = np.zeros(2)
+    problem.nadir = np.ones(2)
 
     res = solve_pareto_front_representation_general(
         lambda x: problem.evaluate(x).objectives,
         problem.n_of_objectives,
         problem.get_variable_bounds(),
-        step=2.0,
+        step=0.2,
         eps=1e-6,
         ideal=problem.ideal,
         nadir=problem.nadir,
         constraint_evaluator=None,
+        solver_method=scalar_method,
     )
 
-    print(res[0].shape)
-
-    res_2 = solve_pareto_front_representation(problem, step=2.0, eps=1e-6)
-
-    print(res_2[0].shape)
+    print(res[1].shape)
