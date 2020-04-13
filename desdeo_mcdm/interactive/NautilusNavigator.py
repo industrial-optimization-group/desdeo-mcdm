@@ -205,8 +205,11 @@ class NautilusNavigator(InteractiveMethod):
         self._navigation_point = self._nadir
         self._projection_index = None
 
-    def start(self):
-        return NautilusNavigatorRequest.init_with_method(method)
+    def start(self) -> Tuple[NautilusNavigatorRequest, SimplePlotRequest]:
+        return (
+            NautilusNavigatorRequest.init_with_method(method),
+            self.create_plot_request(),
+        )
 
     def iterate(
         self, request: NautilusNavigatorRequest
@@ -444,7 +447,7 @@ if __name__ == "__main__":
 
     method = NautilusNavigator((front), ideal, nadir)
 
-    req = method.start()
+    req, preq = method.start()
     print(req.content["reachable_lb"])
     print(req.content["navigation_point"])
     print(req.content["reachable_ub"])
