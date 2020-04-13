@@ -389,25 +389,26 @@ class NautilusNavigator(InteractiveMethod):
     def calculate_bounds(
         self, pareto_front: np.ndarray, nav_point: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        new_lower_bounds = np.zeros(pareto_front.shape[1])
-        new_upper_bounds = np.zeros(pareto_front.shape[1])
+        _pareto_front = np.atleast_2d(pareto_front)
+        new_lower_bounds = np.zeros(_pareto_front.shape[1])
+        new_upper_bounds = np.zeros(_pareto_front.shape[1])
 
         # TODO: vectorize this loop
-        for r in range(pareto_front.shape[1]):
-            mask = np.zeros(pareto_front.shape[1], dtype=bool)
+        for r in range(_pareto_front.shape[1]):
+            mask = np.zeros(_pareto_front.shape[1], dtype=bool)
             mask[r] = True
 
-            subject_to = pareto_front[:, ~mask].reshape(
-                (pareto_front.shape[0], pareto_front.shape[1] - 1)
+            subject_to = _pareto_front[:, ~mask].reshape(
+                (_pareto_front.shape[0], _pareto_front.shape[1] - 1)
             )
 
             con_mask = np.all(subject_to <= nav_point[~mask], axis=1)
 
-            min_index = np.argmin(pareto_front[con_mask][:, mask])
-            max_index = np.argmax(pareto_front[con_mask][:, mask])
+            min_val = np.min(_pareto_front[con_mask, mask])
+            max_val = np.max(_pareto_front[con_mask, mask])
 
-            new_lower_bounds[r] = pareto_front[min_index, r]
-            new_upper_bounds[r] = pareto_front[max_index, r]
+            new_lower_bounds[r] = min_val
+            new_upper_bounds[r] = max_val
 
         return new_lower_bounds, new_upper_bounds
 
@@ -441,9 +442,15 @@ class NautilusNavigator(InteractiveMethod):
 
 
 if __name__ == "__main__":
-    front = np.array([[1, 2, 3], [2, 3, 4], [2, 2, 3], [3, 2, 1]], dtype=float)
-    ideal = np.zeros(3)
-    nadir = np.ones(3) * 5
+    # front = np.array([[1, 2, 3], [2, 3, 4], [2, 2, 3], [3, 2, 1]], dtype=float)
+    # ideal = np.zeros(3)
+    # nadir = np.ones(3) * 5
+    f1 = np.linspace(1, 100, 50)
+    f2 = f1[::-1] ** 2
+
+    front = np.stack((f1, f2)).T
+    ideal = np.min(front, axis=0)
+    nadir = np.max(front, axis=0)
 
     method = NautilusNavigator((front), ideal, nadir)
 
@@ -453,7 +460,7 @@ if __name__ == "__main__":
     print(req.content["reachable_ub"])
 
     response = {
-        "reference_point": np.array([1, 2, 3]),
+        "reference_point": np.array([50, 6000]),
         "speed": 5,
         "go_to_previous": False,
         "stop": False,
