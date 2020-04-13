@@ -136,7 +136,7 @@ class NautilusNavigator(InteractiveMethod):
         ideal: np.ndarray,
         nadir: np.ndarray,
         objective_names: Optional[List[str]] = None,
-        maximize: Optional[List[bool]] = None,
+        maximize: Optional[List[int]] = None,
     ):
         if not pareto_front.ndim == 2:
             raise NautilusNavigatorException(
@@ -164,7 +164,7 @@ class NautilusNavigator(InteractiveMethod):
                 )
             self._objective_names = objective_names
         else:
-            self._objective_names = [f"f{i}" for i in range(ideal.shape[0])]
+            self._objective_names = [f"f{i+1}" for i in range(ideal.shape[0])]
 
         if maximize:
             if not len(objective_names) == ideal.shape[0]:
@@ -174,7 +174,7 @@ class NautilusNavigator(InteractiveMethod):
                 )
             self._maximize = maximize
         else:
-            self._maximize = [False for _ in range(ideal.shape[0])]
+            self._maximize = [-1 for _ in range(ideal.shape[0])]
 
         self._ideal = ideal
         self._nadir = nadir
