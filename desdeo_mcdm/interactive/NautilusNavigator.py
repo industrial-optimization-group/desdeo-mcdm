@@ -278,7 +278,7 @@ class NautilusNavigator(InteractiveMethod):
                 self.create_plot_request(),
             )
 
-        elif self._step_number == 1 or np.allclose(
+        elif self._step_number == 1 or not np.allclose(
             ref_point, self._reference_point
         ):
             if self._step_number == 1:
