@@ -207,7 +207,7 @@ class NautilusNavigator(InteractiveMethod):
 
     def start(self) -> Tuple[NautilusNavigatorRequest, SimplePlotRequest]:
         return (
-            NautilusNavigatorRequest.init_with_method(method),
+            NautilusNavigatorRequest.init_with_method(self),
             self.create_plot_request(),
         )
 
