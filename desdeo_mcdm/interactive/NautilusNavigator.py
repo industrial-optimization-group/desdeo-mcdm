@@ -136,7 +136,7 @@ class NautilusNavigator(InteractiveMethod):
         ideal: np.ndarray,
         nadir: np.ndarray,
         objective_names: Optional[List[str]] = None,
-        maximize: Optional[List[int]] = None,
+        minimize: Optional[List[int]] = None,
     ):
         if not pareto_front.ndim == 2:
             raise NautilusNavigatorException(
@@ -166,15 +166,15 @@ class NautilusNavigator(InteractiveMethod):
         else:
             self._objective_names = [f"f{i+1}" for i in range(ideal.shape[0])]
 
-        if maximize:
+        if minimize:
             if not len(objective_names) == ideal.shape[0]:
                 raise NautilusNavigatorException(
-                    "The maximize list must have "
+                    "The minimize list must have "
                     "as many elements as there are objectives."
                 )
-            self._maximize = maximize
+            self._minimize = minimize
         else:
-            self._maximize = [-1 for _ in range(ideal.shape[0])]
+            self._minimize = [1 for _ in range(ideal.shape[0])]
 
         self._ideal = ideal
         self._nadir = nadir
@@ -426,7 +426,7 @@ class NautilusNavigator(InteractiveMethod):
         dimensions_data = pd.DataFrame(
             index=["minimize", "ideal", "nadir"], columns=self._objective_names,
         )
-        dimensions_data.loc["minimize"] = self._maximize
+        dimensions_data.loc["minimize"] = self._minimize
         dimensions_data.loc["ideal"] = self._reachable_lb
         dimensions_data.loc["nadir"] = self._reachable_ub
 
