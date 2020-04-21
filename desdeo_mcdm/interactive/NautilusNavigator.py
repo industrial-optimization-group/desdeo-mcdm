@@ -36,7 +36,12 @@ class NautilusNavigatorRequest(BaseRequest):
         msg = (
             # TODO: Be more specific...
             "Please supply aspirations levels for each objective between "
-            "the ideal and nadir values. Give also a speed for the navigation."
+            "the upper and lower bounds as `reference_point`. Specify a "
+            "speed between 1-5 as `speed`. If going to a previous step is "
+            "desired, please set `go_to_previous` to True, otherwise it should "
+            "be False. "
+            "Lastly, if stopping is desired, `stop` should be True, "
+            "otherweise it should be set to False."
         )
         content = {
             "message": msg,
@@ -405,10 +410,10 @@ class NautilusNavigator(InteractiveMethod):
 
         self._reachable_idx = new_reachable
 
-        # If stop, return None as a request
+        # If stop, do not update steps
         if self._steps_remaining == 1:
             # stop
-            return
+            return NautilusNavigatorRequest.init_with_method(self)
 
         self._step_number += 1
         self._steps_remaining -= 1
