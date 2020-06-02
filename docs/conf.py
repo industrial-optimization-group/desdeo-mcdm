@@ -58,7 +58,6 @@ numpydoc_show_class_members = False
 #     "exclude-members": ("_abc_cache,_abc_negative_cache," + "_abc_negative_cache_version,_abc_registry"),
 # }
 
-source_parsers = {".md": "recommonmark.parser.CommonMarkParser"}
 source_suffix = [".rst", ".md"]
 
 # Add any paths that contain templates here, relative to this directory.
