@@ -1,11 +1,7 @@
-"""Implementation of the NAUTILUS Navigator algorithm for solving
-multiobjective optimization problems.
+from typing import Callable, Dict, List, Optional, Tuple
 
-"""
 import numpy as np
 import pandas as pd
-
-from typing import Tuple, List, Optional, Callable, Dict
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest

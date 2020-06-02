@@ -1,6 +1,3 @@
-"""This module contains an implementation of the interactive part of the E-NAUTILUS algorithms.
-
-"""
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np

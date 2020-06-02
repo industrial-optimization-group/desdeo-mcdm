@@ -1,29 +1,39 @@
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-
-from typing import List, Union, Tuple, Optional, Dict
+from desdeo_problem.Problem import MOProblem
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_mcdm.utilities.solvers import payoff_table_method
 from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
-from desdeo_tools.scalarization.ASF import (
-    SimpleASF,
-    MaxOfTwoASF,
-    StomASF,
-    PointMethodASF,
-    AugmentedGuessASF,
-)
-from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
+from desdeo_tools.scalarization.ASF import AugmentedGuessASF, MaxOfTwoASF, PointMethodASF, SimpleASF, StomASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_problem.Problem import MOProblem
+from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
 
 
 class NimbusException(Exception):
+    """Risen when an error related to NIMBUS is encountered.
+
+    """
+
     pass
 
 
 class NimbusClassificationRequest(BaseRequest):
-    def __init__(self, method, ref: np.ndarray):
+    """A request to handle the classification of objectives in the synchronous NIMBUS method.
+
+    Args:
+        method (NIMBUS): The instance of the NIMBUS method the request should be initialized for.
+        ref (np.ndarray): Objective values used as a reference the decision maker is classifying the objectives.
+
+    Attributes:
+        self._valid_classifications (List[str]): The valid classifications. Defaults is ['<', '<=', '=', '>=', '0']
+    """
+
+    def __init__(self, method: NIMBUS, ref: np.ndarray):
         msg = (
             "Please classify each of the objective values in one of the following categories:"
             "\n\t1. values should improve '<'"
@@ -45,82 +55,70 @@ class NimbusClassificationRequest(BaseRequest):
             "levels": [None],
             "number_of_solutions": 1,
         }
-        super().__init__(
-            "classification_preference", "required", content=content
-        )
+        super().__init__("classification_preference", "required", content=content)
 
     def validator(self, response: Dict) -> None:
-        if not "classifications" in response:
+        """Validates a dictionary containing the response of a decision maker. Should contain the keys 
+        'classifications', 'levels', and 'number_of_solutions'.
+
+        'classifications' should be a list of strings, where the number of
+        elements is equal to the number of objectives being classified, and
+        the elements are found in `_valid_classifications`. 'levels' should
+        have either aspiration levels or bounds for each objective depending
+        on that objective's classification. 'number_of_solutions' should be
+        an integer between 1 and 4 indicating the number of intermediate solutions to be
+        computed.
+
+        Args:
+            response (Dict): See the documentation for `validator`.
+
+        Raises:
+            NimbusException: Some discrepancy is encountered in the parsing of the response.
+        """
+        if "classifications" not in response:
             raise NimbusException("'classifications' entry missing.")
 
-        if not "levels" in response:
+        if "levels" not in response:
             raise NimbusException("'levels' entry missing.")
 
-        if not "number_of_solutions" in response:
+        if "number_of_solutions" not in response:
             raise NimbusException("'number_of_solutions' entry missing.")
 
         # check the classifications
-        is_valid_cls = map(
-            lambda x: x in self._valid_classifications,
-            response["classifications"],
-        )
+        is_valid_cls = map(lambda x: x in self._valid_classifications, response["classifications"],)
 
         if not all(list(is_valid_cls)):
-            raise NimbusException(
-                f"Invalid classificaiton found in {response['classifications']}"
-            )
+            raise NimbusException(f"Invalid classificaiton found in {response['classifications']}")
 
         # check the levels
-        if (
-            len(np.array(response["levels"]).squeeze())
-            != self._method._problem.n_of_objectives
-        ):
-            raise NimbusException(
-                f"Wrong number of levels supplied in {response['levels']}"
-            )
+        if len(np.array(response["levels"]).squeeze()) != self._method._problem.n_of_objectives:
+            raise NimbusException(f"Wrong number of levels supplied in {response['levels']}")
 
-        improve_until_inds = np.where(
-            np.array(response["classifications"]) == "<="
-        )[0]
+        improve_until_inds = np.where(np.array(response["classifications"]) == "<=")[0]
 
-        impaire_until_inds = np.where(
-            np.array(response["classifications"]) == ">="
-        )[0]
+        impaire_until_inds = np.where(np.array(response["classifications"]) == ">=")[0]
 
         if len(improve_until_inds) > 0:
             # some objectives classified to be improved until some level
             if not np.all(
-                np.array(response["levels"])[improve_until_inds]
-                >= self._method._ideal[improve_until_inds]
+                np.array(response["levels"])[improve_until_inds] >= self._method._ideal[improve_until_inds]
             ) or not np.all(
-                np.array(response["levels"])[improve_until_inds]
-                <= self._method._nadir[improve_until_inds]
+                np.array(response["levels"])[improve_until_inds] <= self._method._nadir[improve_until_inds]
             ):
-                raise NimbusException(
-                    f"Given levels must be between the nadir and ideal points!"
-                )
+                raise NimbusException("Given levels must be between the nadir and ideal points!")
 
         if len(impaire_until_inds) > 0:
             # some objectives classified to be improved until some level
             if not np.all(
-                np.array(response["levels"])[impaire_until_inds]
-                >= self._method._ideal[impaire_until_inds]
+                np.array(response["levels"])[impaire_until_inds] >= self._method._ideal[impaire_until_inds]
             ) or not np.all(
-                np.array(response["levels"])[impaire_until_inds]
-                <= self._method._nadir[impaire_until_inds]
+                np.array(response["levels"])[impaire_until_inds] <= self._method._nadir[impaire_until_inds]
             ):
-                raise NimbusException(
-                    f"Given levels must be between the nadir and ideal points!"
-                )
+                raise NimbusException("Given levels must be between the nadir and ideal points!")
 
         # check maximum number of solutions
-        if (
-            response["number_of_solutions"] > 4
-            or response["number_of_solutions"] < 1
-        ):
-            raise NimbusException(
-                f"The number of solutions must be between 1 and 4."
-            )
+        if response["number_of_solutions"] > 4 or response["number_of_solutions"] < 1:
+            raise NimbusException("The number of solutions must be between 1 and 4.")
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
@@ -129,10 +127,19 @@ class NimbusClassificationRequest(BaseRequest):
 
 
 class NimbusSaveRequest(BaseRequest):
+    """A request to handle archiving of the solutions computed with NIMBUS.
+
+    Args:
+        solution_vectors (List[np.ndarray]): A list of numpy arrays each representing a decision variable vector.
+        objective_vectors (List[np.ndarray]): A list of numpy arrays each representing an objective vector.
+
+    Note:
+        The objective vector at position 'i' in `objective_vectors` should correspond to the decision variables at
+        position 'i' in `solution_vectors`.
+    """
+
     def __init__(
-        self,
-        solution_vectors: List[np.ndarray],
-        objective_vectors: List[np.ndarray],
+        self, solution_vectors: List[np.ndarray], objective_vectors: List[np.ndarray],
     ):
         msg = (
             "Please specify which solutions shown you would like to save for later viewing. Supply the "
@@ -145,11 +152,20 @@ class NimbusSaveRequest(BaseRequest):
             "objectives": objective_vectors,
             "indices": [],
         }
-        super().__init__(
-            "classification_preference", "required", content=content
-        )
+        super().__init__("classification_preference", "required", content=content)
 
-    def validator(self, response: Dict):
+    def validator(self, response: Dict) -> None:
+        """Validates a response dictionary. The dictionary should contain the keys 'indices'.
+
+        'indices' should be a list of integers representing an index to the
+        lists `solutions_vectors` and `objective_vectors`.
+
+        Args:
+            response (Dict): See the documentation for `validator`.
+
+        Raises:
+            NimbusException: Some discrepancy is encountered in the parsing of `response`.
+        """
         if "indices" not in response:
             raise NimbusException("'indices' entry missing")
 
@@ -157,21 +173,13 @@ class NimbusSaveRequest(BaseRequest):
             # nothing to save, continue to next state
             return
 
-        if (
-            len(response["indices"]) > len(self.content["objectives"])
-            or np.min(response["indices"]) < 0
-        ):
+        if len(response["indices"]) > len(self.content["objectives"]) or np.min(response["indices"]) < 0:
             # wrong number of indices
             raise NimbusException(f"Invalid indices {response['indices']}")
 
-        if (
-            np.max(response["indices"]) >= len(self.content["objectives"])
-            or np.min(response["indices"]) < 0
-        ):
+        if np.max(response["indices"]) >= len(self.content["objectives"]) or np.min(response["indices"]) < 0:
             # out of bounds index
-            raise NimbusException(
-                f"Incides {response['indices']} out of bounds."
-            )
+            raise NimbusException(f"Incides {response['indices']} out of bounds.")
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
@@ -180,10 +188,20 @@ class NimbusSaveRequest(BaseRequest):
 
 
 class NimbusIntermediateSolutionsRequest(BaseRequest):
+    """A request to handle the computation of intermediate points between two previously computed points.
+
+    Args:
+        solution_vectors (List[np.ndarray]): A list of numpy arrays each representing a decision variable vector.
+        objective_vectors (List[np.ndarray]): A list of numpy arrays each representing an objective vector.
+
+    Note:
+        The objective vector at position 'i' in `objective_vectors` should correspond to the decision variables at
+        position 'i' in `solution_vectors`. Only the two first entries in each of the lists is relevant. The
+        rest is ignored.
+    """
+
     def __init__(
-        self,
-        solution_vectors: List[np.ndarray],
-        objective_vectors: List[np.ndarray],
+        self, solution_vectors: List[np.ndarray], objective_vectors: List[np.ndarray],
     ):
         msg = (
             "Would you like to see intermediate solutions between two previusly computed solutions? "
@@ -198,44 +216,40 @@ class NimbusIntermediateSolutionsRequest(BaseRequest):
             "number_of_desired_solutions": 0,
         }
 
-        super().__init__(
-            "classification_preference", "required", content=content
-        )
+        super().__init__("classification_preference", "required", content=content)
 
     def validator(self, response: Dict):
-        if not "indices" in response:
+        """Validates a response dictionary. The dictionary should contain the keys 'indices' and 'number_of_solutions'.
+
+        'indices' should be a list of integers representing an index to the
+        lists `solutions_vectors` and `objective_vectors`. 'number_of_solutions' should be an integer greater or equal 
+        to 1.
+
+        Args:
+            response (Dict): See the documentation for `validator`.
+
+        Raises:
+            NimbusException: Some discrepancy is encountered in the parsing of `response`.
+        """
+        if "indices" not in response:
             raise NimbusException("'indices' entry missing.")
 
-        if not "number_of_desired_solutions" in response:
-            raise NimbusException(
-                "'number_of_desired_solutions' entry missing."
-            )
+        if "number_of_desired_solutions" not in response:
+            raise NimbusException("'number_of_desired_solutions' entry missing.")
 
         if response["number_of_desired_solutions"] < 0:
-            raise NimbusException(
-                f"Invalid number of desired solutions {response['number_of_desired_solutions']}."
-            )
+            raise NimbusException(f"Invalid number of desired solutions {response['number_of_desired_solutions']}.")
 
-        if (
-            not response["indices"]
-            and response["number_of_desired_solutions"] > 0
-        ):
-            raise NimbusException(
-                "Indices supplied yet number of desired soutions is greater than zero."
-            )
+        if not response["indices"] and response["number_of_desired_solutions"] > 0:
+            raise NimbusException("Indices supplied yet number of desired soutions is greater than zero.")
 
         if response["indices"] and response["number_of_desired_solutions"] == 0:
-            raise NimbusException(
-                "Indices not supplied yet number of desired soutions is zero."
-            )
+            raise NimbusException("Indices not supplied yet number of desired soutions is zero.")
 
         if not response["indices"]:
             return
 
-        if (
-            np.max(response["indices"]) >= len(self.content["objectives"])
-            or np.min(response["indices"]) < 0
-        ):
+        if np.max(response["indices"]) >= len(self.content["objectives"]) or np.min(response["indices"]) < 0:
             # indices out of bounds
             raise NimbusException(f"Invalid indices {response['indices']}")
 
@@ -246,10 +260,21 @@ class NimbusIntermediateSolutionsRequest(BaseRequest):
 
 
 class NimbusMostPreferredRequest(BaseRequest):
+    """A request to handle the indication of a preferred point.
+
+    Args:
+        solution_vectors (List[np.ndarray]): A list of numpy arrays each representing a decision variable vector.
+        objective_vectors (List[np.ndarray]): A list of numpy arrays each representing an objective vector.
+
+    Note:
+        The objective vector at position 'i' in `objective_vectors` should correspond to the decision variables at
+        position 'i' in `solution_vectors`. Only the two first entries in each of the lists is relevant. The preferred
+        solution will be selected from `objective_vectors`.
+
+    """
+
     def __init__(
-        self,
-        solution_vectors: List[np.ndarray],
-        objective_vectors: List[np.ndarray],
+        self, solution_vectors: List[np.ndarray], objective_vectors: List[np.ndarray],
     ):
         msg = "Please select your most preferred solution and whether you would like to continue. "
 
@@ -261,11 +286,20 @@ class NimbusMostPreferredRequest(BaseRequest):
             "continue": True,
         }
 
-        super().__init__(
-            "classification_preference", "required", content=content
-        )
+        super().__init__("classification_preference", "required", content=content)
 
     def validator(self, response: Dict):
+        """Validates a response dictionary. The dictionary should contain the keys 'index' and 'continue'.
+
+        'index' is an integer and should indicate the index of the preferred solution is `objective_vectors`. 
+        'continue' is a boolean and indicates whether to stop or continue the iteration of Synchronous NIMBUS.
+
+        Args:
+            response (Dict): See the documentation for `validator`.
+
+        Raises:
+            NimbusException: Some discrepancy is encountered in the parsing of `response`.
+        """
         if "index" not in response:
             raise NimbusException(f"'index' entry missing.")
 
@@ -273,19 +307,12 @@ class NimbusMostPreferredRequest(BaseRequest):
             raise NimbusException(f"'continue' entry missing.")
 
         if not type(response["index"]) == int:
-            raise NimbusException(
-                f"The index must be a single integer, found {response['index']}"
-            )
+            raise NimbusException(f"The index must be a single integer, found {response['index']}")
 
         if not type(response["continue"]) == bool:
-            raise NimbusException(
-                f"Continue must be a boolean value, found {response['index']}"
-            )
+            raise NimbusException(f"Continue must be a boolean value, found {response['index']}")
 
-        if not (
-            response["index"] >= 0
-            and response["index"] < len(self.content["objectives"])
-        ):
+        if not (response["index"] >= 0 and response["index"] < len(self.content["objectives"])):
             raise NimbusException(
                 (
                     f"The index must be a positive integer less than "
@@ -300,6 +327,17 @@ class NimbusMostPreferredRequest(BaseRequest):
 
 
 class NimbusStopRequest(BaseRequest):
+    """A request to handle the termination of Synchronous NIMBUS.
+
+    Args:
+        solutions_final (np.ndarray): A numpy array containing the final decision variable values.
+        objective_final (np.ndarray): A numpy array containing the final objective variables which correspond to
+        `solution_final`.
+
+    Note:
+        This request expects no response.
+    """
+
     def __init__(
         self, solution_final: np.ndarray, objective_final: np.ndarray,
     ):
@@ -311,24 +349,19 @@ class NimbusStopRequest(BaseRequest):
             "objective": objective_final,
         }
 
-        super().__init__(
-            "classification_preference", "no_interaction", content=content
-        )
+        super().__init__("classification_preference", "no_interaction", content=content)
 
 
 class NIMBUS(InteractiveMethod):
-    """Implements the synchronous NIMBUS variant.
+    """Implements the synchronous NIMBUS algorithm.
+
+    Args:
+        problem (MOProblem): The problem to be solved.
+        scalar_method (Optional[ScalarMethod], optional): The method used to solve
+            the various ASF minimization problems present in the method. Defaults to None.
     """
 
-    def __init__(
-        self, problem: MOProblem, scalar_method: Optional[ScalarMethod] = None
-    ):
-        """   
-        Args:
-            problem (MOProblem): The problem to be solved.
-            scalar_method (Optional[ScalarMethod], optional): The method used to solve
-            the various ASF minimization problems present in the method. Defaults to None.
-        """
+    def __init__(self, problem: MOProblem, scalar_method: Optional[ScalarMethod] = None):
         # check if ideal and nadir are defined
         if problem.ideal is None or problem.nadir is None:
             # TODO: use same method as defined in scalar_method
@@ -355,10 +388,7 @@ class NIMBUS(InteractiveMethod):
             _con_eval = None
 
         solver = ScalarMinimizer(
-            scalarizer,
-            problem.get_variable_bounds(),
-            constraint_evaluator=_con_eval,
-            method=self._scalar_method,
+            scalarizer, problem.get_variable_bounds(), constraint_evaluator=_con_eval, method=self._scalar_method,
         )
         # TODO: fix tools to check for scipy methods in general and delete me!
         solver._use_scipy = True
@@ -367,9 +397,7 @@ class NIMBUS(InteractiveMethod):
 
         if res["success"]:
             self._current_solution = res["x"]
-            self._current_objectives = problem.evaluate(
-                self._current_solution
-            ).objectives.squeeze()
+            self._current_objectives = problem.evaluate(self._current_solution).objectives.squeeze()
 
         self._archive_solutions = []
         self._archive_objectives = []
@@ -386,34 +414,32 @@ class NIMBUS(InteractiveMethod):
         """
         return self.request_classification()
 
-    def request_classification(
-        self,
-    ) -> Tuple[NimbusClassificationRequest, SimplePlotRequest]:
+    def request_classification(self,) -> Tuple[NimbusClassificationRequest, SimplePlotRequest]:
         return (
-            NimbusClassificationRequest(
-                self, self._current_objectives.squeeze()
-            ),
+            NimbusClassificationRequest(self, self._current_objectives.squeeze()),
             None,
         )
 
-    def create_plot_request(
-        self, objectives: np.ndarray, msg: str
-    ) -> SimplePlotRequest:
+    def create_plot_request(self, objectives: np.ndarray, msg: str) -> SimplePlotRequest:
+        """Used to create a plot request for visualizing objective values.
+
+        Args:
+            objectives (np.ndarray): A 2D numpy array containing objective vectors to be visualized.
+            msg (str): A message to be displayed in the context of a visualization.
+
+        Returns:
+            SimplePlotRequest: A plot request to create a visualization.
+        """
         dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"],
-            columns=self._problem.get_objective_names(),
+            index=["minimize", "ideal", "nadir"], columns=self._problem.get_objective_names(),
         )
         dimensions_data.loc["minimize"] = self._problem._max_multiplier
         dimensions_data.loc["ideal"] = self._ideal
         dimensions_data.loc["nadir"] = self._nadir
 
-        data = pd.DataFrame(
-            objectives, columns=self._problem.get_objective_names()
-        )
+        data = pd.DataFrame(objectives, columns=self._problem.get_objective_names())
 
-        plot_request = SimplePlotRequest(
-            data=data, dimensions_data=dimensions_data, message=msg,
-        )
+        plot_request = SimplePlotRequest(data=data, dimensions_data=dimensions_data, message=msg,)
 
         return plot_request
 
@@ -424,31 +450,21 @@ class NIMBUS(InteractiveMethod):
         
         Args:
             request (NimbusClassificationReuest): A classification request with the
-            response attribute set.
+                response attribute set.
         
         Returns:
             Tuple[NimbusSaveRequest, SimplePlotRequest]: A NIMBUS save request and a plot request
             with the solutions the decision maker can choose from to save for alter use.
         """
-        improve_inds = np.where(
-            np.array(request.response["classifications"]) == "<"
-        )[0]
+        improve_inds = np.where(np.array(request.response["classifications"]) == "<")[0]
 
-        acceptable_inds = np.where(
-            np.array(request.response["classifications"]) == "="
-        )[0]
+        acceptable_inds = np.where(np.array(request.response["classifications"]) == "=")[0]
 
-        free_inds = np.where(
-            np.array(request.response["classifications"]) == "0"
-        )[0]
+        free_inds = np.where(np.array(request.response["classifications"]) == "0")[0]
 
-        improve_until_inds = np.where(
-            np.array(request.response["classifications"]) == "<="
-        )[0]
+        improve_until_inds = np.where(np.array(request.response["classifications"]) == "<=")[0]
 
-        impaire_until_inds = np.where(
-            np.array(request.response["classifications"]) == ">="
-        )[0]
+        impaire_until_inds = np.where(np.array(request.response["classifications"]) == ">=")[0]
 
         # calculate the new solutions
         return self.calculate_new_solutions(
@@ -490,7 +506,7 @@ class NIMBUS(InteractiveMethod):
         
         Args:
             request (NimbusIntermediateSolutionsRequest): A NIMBUS intermediate solutions
-            request with the response attribute set.
+                request with the response attribute set.
         
         Returns:
             Tuple[Union[NimbusSaveRequest, NimbusMostPreferredRequest], SimplePlotRequest,]:
@@ -500,27 +516,22 @@ class NIMBUS(InteractiveMethod):
         """
         if request.response["indices"]:
             return self.compute_intermediate_solutions(
-                np.array(request.content["solutions"])[
-                    request.response["indices"]
-                ],
+                np.array(request.content["solutions"])[request.response["indices"]],
                 int(request.response["number_of_desired_solutions"]),
             )
 
         return self.request_most_preferred_solution(
-            np.array(request.content["solutions"]),
-            np.array(request.content["objectives"]),
+            np.array(request.content["solutions"]), np.array(request.content["objectives"]),
         )
 
     def handle_most_preferred_request(
         self, request: NimbusMostPreferredRequest
-    ) -> Tuple[
-        Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest
-    ]:
+    ) -> Tuple[Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest]:
         """Handles a preferres solution request.
         
         Args:
             request (NimbusMostPreferredRequest): A NIMBUS preferred solution request with the
-            response attribute set.
+                response attribute set.
         
         Returns:
             Tuple[Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest]:
@@ -541,26 +552,36 @@ class NIMBUS(InteractiveMethod):
             return self.request_classification()
 
     def request_stop(self) -> Tuple[NimbusStopRequest, SimplePlotRequest]:
-        """Returns a stop request.
+        """Create a NimbusStopRequest based on self.
         
         Returns:
             Tuple[NimbusStopRequest, SimplePlotRequest]: A stop request and a plot
             request with the final solution chosen in it.
         """
-        request = NimbusStopRequest(
-            self._current_solution, self._current_objectives
-        )
+        request = NimbusStopRequest(self._current_solution, self._current_objectives)
 
         msg = "Final solution reached"
-        plot_request = self.create_plot_request(
-            np.atleast_2d(self._current_objectives), msg
-        )
+        plot_request = self.create_plot_request(np.atleast_2d(self._current_objectives), msg)
 
         return request, plot_request
 
     def request_most_preferred_solution(
         self, solutions: np.ndarray, objectives: np.ndarray
     ) -> Tuple[NimbusMostPreferredRequest, SimplePlotRequest]:
+        """Create a NimbusMostPreferredRequest.
+
+        Args:
+            solutions (np.ndarray): A 2D numpy array of decision variable vectors.
+            objectives (np.ndarray): A 2D numpy array of objective value vectors.
+
+        Returns:
+            Tuple[NimbusMostPreferredRequest, SimplePlotRequest]: The requests based on the given arguments.
+
+        Note:
+            The 'i'th decision variable vector in `solutions` should correspond to the 'i'th objective value vector in
+            `objectives`.
+
+        """
         # request most preferred solution
         request = NimbusMostPreferredRequest(list(solutions), list(objectives))
 
@@ -573,10 +594,10 @@ class NIMBUS(InteractiveMethod):
         self, solutions: np.ndarray, n_desired: int,
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
         """Computs intermediate solution between two solutions computed earlier.
-        
+
         Args:
             solutions (np.ndarray): The solutions between which the intermediat solutions should
-            be computed.
+                be computed.
             n_desired (int): The number of intermediate solutions desired.
         
         Raises:
@@ -595,29 +616,18 @@ class NIMBUS(InteractiveMethod):
         # two supplied solutions
         step_size = norm / (2 + n_desired)
 
-        intermediate_points = np.array(
-            [
-                solutions[1] + i * step_size * between_norm
-                for i in range(1, n_desired + 1)
-            ]
-        )
+        intermediate_points = np.array([solutions[1] + i * step_size * between_norm for i in range(1, n_desired + 1)])
 
         # project each of the intermediate solutions to the Pareto front
         intermediate_solutions = np.zeros(intermediate_points.shape)
-        intermediate_objectives = np.zeros(
-            (n_desired, self._problem.n_of_objectives)
-        )
+        intermediate_objectives = np.zeros((n_desired, self._problem.n_of_objectives))
         asf = PointMethodASF(self._nadir, self._ideal)
 
         for i in range(n_desired):
             scalarizer = Scalarizer(
                 lambda x: self._problem.evaluate(x).objectives,
                 asf,
-                scalarizer_args={
-                    "reference_point": self._problem.evaluate(
-                        intermediate_points[i]
-                    ).objectives
-                },
+                scalarizer_args={"reference_point": self._problem.evaluate(intermediate_points[i]).objectives},
             )
 
             if self._problem.n_of_constraints > 0:
@@ -625,23 +635,14 @@ class NIMBUS(InteractiveMethod):
             else:
                 cons = None
 
-            solver = ScalarMinimizer(
-                scalarizer,
-                self._problem.get_variable_bounds(),
-                cons,
-                method=self._scalar_method,
-            )
+            solver = ScalarMinimizer(scalarizer, self._problem.get_variable_bounds(), cons, method=self._scalar_method,)
 
             res = solver.minimize(self._current_solution)
             intermediate_solutions[i] = res["x"]
-            intermediate_objectives[i] = self._problem.evaluate(
-                res["x"]
-            ).objectives
+            intermediate_objectives[i] = self._problem.evaluate(res["x"]).objectives
 
         # create appropiate requests
-        save_request = NimbusSaveRequest(
-            list(intermediate_solutions), list(intermediate_objectives)
-        )
+        save_request = NimbusSaveRequest(list(intermediate_solutions), list(intermediate_objectives))
 
         msg = "Computed intermediate solutions"
         plot_request = self.create_plot_request(intermediate_objectives, msg)
@@ -649,10 +650,7 @@ class NIMBUS(InteractiveMethod):
         return save_request, plot_request
 
     def save_solutions_to_archive(
-        self,
-        objectives: np.ndarray,
-        decision_variables: np.ndarray,
-        indices: List[int],
+        self, objectives: np.ndarray, decision_variables: np.ndarray, indices: List[int],
     ) -> Tuple[NimbusIntermediateSolutionsRequest, None]:
         """Save solutions to the archive. Saves also the corresponding objective function
         values.
@@ -678,9 +676,7 @@ class NIMBUS(InteractiveMethod):
         req_solutions = self._archive_solutions + list(decision_variables[mask])
 
         # create intermediate solutions request
-        request = NimbusIntermediateSolutionsRequest(
-            req_solutions, req_objectives
-        )
+        request = NimbusIntermediateSolutionsRequest(req_solutions, req_objectives)
 
         msg = "Computed new solutions"
         plot_request = self.create_plot_request(req_objectives, msg)
@@ -707,7 +703,7 @@ class NIMBUS(InteractiveMethod):
             improve_until_inds (np.ndarray): Like above, but improved until an aspiration level is reached.
             acceptable_inds (np.ndarray): Indices of objectives which are acceptable as they are now.
             impaire_until_inds (np.ndarray): Indices of objectives which may be impaired until an upper limit is
-            reached.
+                reached.
             free_inds (np.ndarray): Indices of objectives which may change freely.
         
         Returns:
@@ -717,9 +713,7 @@ class NIMBUS(InteractiveMethod):
         results = []
 
         # always computed
-        asf_1 = MaxOfTwoASF(
-            self._nadir, self._ideal, improve_inds, improve_until_inds
-        )
+        asf_1 = MaxOfTwoASF(self._nadir, self._ideal, improve_inds, improve_until_inds)
 
         def cons_1(
             x: np.ndarray,
@@ -746,16 +740,11 @@ class NIMBUS(InteractiveMethod):
                 return res
 
         scalarizer_1 = Scalarizer(
-            lambda x: self._problem.evaluate(x).objectives,
-            asf_1,
-            scalarizer_args={"reference_point": levels},
+            lambda x: self._problem.evaluate(x).objectives, asf_1, scalarizer_args={"reference_point": levels},
         )
 
         solver_1 = ScalarMinimizer(
-            scalarizer_1,
-            self._problem.get_variable_bounds(),
-            cons_1,
-            method=self._scalar_method,
+            scalarizer_1, self._problem.get_variable_bounds(), cons_1, method=self._scalar_method,
         )
 
         res_1 = solver_1.minimize(self._current_solution)
@@ -775,23 +764,16 @@ class NIMBUS(InteractiveMethod):
 
             # cons_2 can be used in the rest of the ASF scalarizations, it's not a bug!
             if self._problem.n_of_constraints > 0:
-                cons_2 = lambda x: self._problem.evaluate(
-                    x
-                ).constraints.squeeze()
+                cons_2 = lambda x: self._problem.evaluate(x).constraints.squeeze()
             else:
                 cons_2 = None
 
             scalarizer_2 = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives,
-                asf_2,
-                scalarizer_args={"reference_point": z_bar},
+                lambda x: self._problem.evaluate(x).objectives, asf_2, scalarizer_args={"reference_point": z_bar},
             )
 
             solver_2 = ScalarMinimizer(
-                scalarizer_2,
-                self._problem.get_variable_bounds(),
-                cons_2,
-                method=self._scalar_method,
+                scalarizer_2, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
             )
 
             res_2 = solver_2.minimize(self._current_solution)
@@ -802,16 +784,11 @@ class NIMBUS(InteractiveMethod):
             asf_3 = PointMethodASF(self._nadir, self._ideal)
 
             scalarizer_3 = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives,
-                asf_3,
-                scalarizer_args={"reference_point": z_bar},
+                lambda x: self._problem.evaluate(x).objectives, asf_3, scalarizer_args={"reference_point": z_bar},
             )
 
             solver_3 = ScalarMinimizer(
-                scalarizer_3,
-                self._problem.get_variable_bounds(),
-                cons_2,
-                method=self._scalar_method,
+                scalarizer_3, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
             )
 
             res_3 = solver_3.minimize(self._current_solution)
@@ -822,16 +799,11 @@ class NIMBUS(InteractiveMethod):
             asf_4 = AugmentedGuessASF(self._nadir, self._ideal, free_inds)
 
             scalarizer_4 = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives,
-                asf_4,
-                scalarizer_args={"reference_point": z_bar},
+                lambda x: self._problem.evaluate(x).objectives, asf_4, scalarizer_args={"reference_point": z_bar},
             )
 
             solver_4 = ScalarMinimizer(
-                scalarizer_4,
-                self._problem.get_variable_bounds(),
-                cons_2,
-                method=self._scalar_method,
+                scalarizer_4, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
             )
 
             res_4 = solver_4.minimize(self._current_solution)
@@ -839,9 +811,7 @@ class NIMBUS(InteractiveMethod):
 
         # create the save request
         solutions = [res["x"] for res in results]
-        objectives = [
-            self._problem.evaluate(x).objectives.squeeze() for x in solutions
-        ]
+        objectives = [self._problem.evaluate(x).objectives.squeeze() for x in solutions]
 
         save_request = NimbusSaveRequest(solutions, objectives)
 
@@ -850,9 +820,23 @@ class NIMBUS(InteractiveMethod):
 
         return save_request, plot_request
 
-    def update_current_solution(
-        self, solutions: np.ndarray, objectives: np.ndarray, index: int
-    ) -> None:
+    def update_current_solution(self, solutions: np.ndarray, objectives: np.ndarray, index: int) -> None:
+        """Update the state of self with a new current solution and the corresponding objective values. This solution is
+        used in the classification phase of synchronous NIMBUS.
+
+        Args:
+            solutions (np.ndarray): A 2D numpy array of decision variable vectors.
+            objectives (np.ndarray): A 2D numpy array of objective value vectors.
+            index (int): The index of the solution in `solutions` and `objectives`.
+
+        Returns:
+            Tuple[NimbusMostPreferredRequest, SimplePlotRequest]: The requests based on the given arguments.
+
+        Note:
+            The 'i'th decision variable vector in `solutions` should correspond to the 'i'th objective value vector in
+            `objectives`.
+
+        """
         self._current_solution = solutions[index].squeeze()
         self._current_objectives = objectives[index].squeeze()
 
@@ -868,18 +852,14 @@ class NIMBUS(InteractiveMethod):
             NimbusStopRequest,
         ],
     ) -> Tuple[
-        Union[
-            NimbusClassificationRequest,
-            NimbusSaveRequest,
-            NimbusIntermediateSolutionsRequest,
-        ],
+        Union[NimbusClassificationRequest, NimbusSaveRequest, NimbusIntermediateSolutionsRequest,],
         Union[SimplePlotRequest, None],
     ]:
         """Implements a finite state machine to iterate over the different steps defined in Synchronous NIMBUS based on a supllied request.
         
         Args:
             request (Union[NimbusClassificationRequest,NimbusSaveRequest,NimbusIntermediateSolutionsRequest,NimbusMostPreferredRequest,NimbusStopRequest,]):
-            A request based on the next step in the NIMBUS algorithm is taken.
+                A request based on the next step in the NIMBUS algorithm is taken.
         
         Raises:
             NimbusException: If a wrong type of request is supllied based on the current state NIMBUS is in.
@@ -900,9 +880,7 @@ class NIMBUS(InteractiveMethod):
 
         elif self._state == "archive":
             if type(request) != NimbusSaveRequest:
-                raise NimbusException(
-                    f"Expected request type {type(NimbusSaveRequest)}, was {type(request)}."
-                )
+                raise NimbusException(f"Expected request type {type(NimbusSaveRequest)}, was {type(request)}.")
 
             requests = self.handle_save_request(request)
             self._state = "intermediate"
@@ -925,9 +903,7 @@ class NIMBUS(InteractiveMethod):
 
         elif self._state == "preferred":
             if type(request) != NimbusMostPreferredRequest:
-                raise NimbusException(
-                    f"Expected request type {type(NimbusMostPreferredRequest)}, was {type(request)}."
-                )
+                raise NimbusException(f"Expected request type {type(NimbusMostPreferredRequest)}, was {type(request)}.")
 
             requests = self.handle_most_preferred_request(request)
 
@@ -962,13 +938,7 @@ if __name__ == "__main__":
         return -res
 
     def f_2(x):
-        res = (
-            2.60
-            + 0.03 * x[:, 0]
-            + 0.02 * x[:, 1]
-            + 0.01 / (1.39 - x[:, 0] ** 2)
-            + 0.30 / (1.39 - x[:, 1] ** 2)
-        )
+        res = 2.60 + 0.03 * x[:, 0] + 0.02 * x[:, 1] + 0.01 / (1.39 - x[:, 0] ** 2) + 0.30 / (1.39 - x[:, 1] ** 2)
         return -res
 
     def f_3(x):
@@ -992,15 +962,10 @@ if __name__ == "__main__":
     f4 = _ScalarObjective(name="f4", evaluator=f_4)
     f5 = _ScalarObjective(name="f5", evaluator=f_5)
     varsl = variable_builder(
-        ["x_1", "x_2"],
-        initial_values=[0.5, 0.5],
-        lower_bounds=[0.3, 0.3],
-        upper_bounds=[1.0, 1.0],
+        ["x_1", "x_2"], initial_values=[0.5, 0.5], lower_bounds=[0.3, 0.3], upper_bounds=[1.0, 1.0],
     )
     c1 = ScalarConstraint("c1", 2, 5, evaluator=c_1)
-    problem = MOProblem(
-        variables=varsl, objectives=[f1, f2, f3, f4, f5], constraints=[c1]
-    )
+    problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5], constraints=[c1])
 
     method = NIMBUS(problem, scalar_method="scipy_de")
     reqs = method.request_classification()[0]

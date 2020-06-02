@@ -1,24 +1,22 @@
 """Implements various useful solvers.
 
 """
-import numpy as np
-
 import logging
-from typing import Tuple, Union, Optional, Callable
+from typing import Callable, Optional, Tuple, Union
 
-# this has to be fixed, importing ProblemBase enables DEBUG
-# logging for all modules, causes matplotlib spam...
-mpl_logger = logging.getLogger("matplotlib")
-mpl_logger.setLevel(logging.WARNING)
-
+import numpy as np
 from desdeo_problem.Problem import MOProblem
 
+from desdeo_tools.scalarization.ASF import ASFBase, PointMethodASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_tools.scalarization.ASF import PointMethodASF, ASFBase
-from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
+from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
 
 
 class MCDMUtilityException(Exception):
+    """Raised when an exception is encountered in some of the utilities.
+
+    """
+
     pass
 
 
@@ -49,39 +47,35 @@ def payoff_table_method_general(
     
     Args:
         objective_evaluator (Callable[[np.ndarray], np.ndarray]): The
-        evaluator which returns the objective values given a set of
-        variabels.
+            evaluator which returns the objective values given a set of
+            variabels.
         n_of_objectives (int): Number of objectives returned by calling
-        objective_evaluator.
+            objective_evaluator.
         variable_bounds (np.ndarray): The lower and upper bounds of the
-        variables passed as argument to objective_evaluator. Should be a 2D
-        numpy array with the limits for each variable being on each row. The
-        first column should contain the lower bounds, and the second column
-        the upper bounds. Use np.inf to indicate no bounds.
-        constraint_evaluator (Optional[Callable[[np.ndarray], np.ndarray]],
-        optional): An evaluator accepting the same arguments as
-        objective_evaluator, which returns the constraint values of the
-        multiobjective minimization problem being solved. A negative
-        constraint value indicates a broken constraint. Defaults to None.
+            variables passed as argument to objective_evaluator. Should be a 2D
+            numpy array with the limits for each variable being on each row. The
+            first column should contain the lower bounds, and the second column
+            the upper bounds. Use np.inf to indicate no bounds.
+        constraint_evaluator (Optional[Callable[[np.ndarray], np.ndarray]], optional):
+            An evaluator accepting the same arguments as
+            objective_evaluator, which returns the constraint values of the
+            multiobjective minimization problem being solved. A negative
+            constraint value indicates a broken constraint. Defaults to None.
         initial_guess (Optional[np.ndarray], optional): The initial guess
-        used for the variable values while solving the payoff table. The
-        relevancy of this parameter depends on the solver_method being used.
-        Defaults to None.
+            used for the variable values while solving the payoff table. The
+            relevancy of this parameter depends on the solver_method being used.
+            Defaults to None.
         solver_method (Optional[Union[ScalarMethod, str]], optional): The
-        method to solve the scalarized problems in the payoff table method.
-        Defaults to "scipy_de", which ignores initial_guess.
+            method to solve the scalarized problems in the payoff table method.
+            Defaults to "scipy_de", which ignores initial_guess.
     
     Returns:
         Tuple[np.ndarray, np.ndarray]: The representations computed using the
         payoff table for the ideal and nadir points respectively.
     """
-    scalarizer = Scalarizer(
-        objective_evaluator, weighted_scalarizer, scalarizer_args={"ws": None},
-    )
+    scalarizer = Scalarizer(objective_evaluator, weighted_scalarizer, scalarizer_args={"ws": None},)
 
-    solver = ScalarMinimizer(
-        scalarizer, variable_bounds, constraint_evaluator, solver_method,
-    )
+    solver = ScalarMinimizer(scalarizer, variable_bounds, constraint_evaluator, solver_method,)
 
     ws = np.eye(n_of_objectives)
     po_table = np.zeros((n_of_objectives, n_of_objectives))
@@ -92,9 +86,7 @@ def payoff_table_method_general(
         scalarizer._scalarizer_args = {"ws": ws[i]}
         opt_res = solver.minimize(initial_guess)
         if not opt_res["success"]:
-            print(
-                "Unsuccessful optimization result encountered while computing a payoff table!"
-            )
+            print("Unsuccessful optimization result encountered while computing a payoff table!")
         po_table[i] = objective_evaluator(opt_res["x"])
 
     ideal = np.diag(po_table)
@@ -114,10 +106,10 @@ def payoff_table_method(
     Args:
         problem (MOProblem): The problem defined as a MOProblem class instance.
         initial_guess (Optional[np.ndarray]): The initial guess of decision variables
-        to be used in the solver. If None, uses the lower bounds defined for
-        the variables in MOProblem. Defaults to None.
+            to be used in the solver. If None, uses the lower bounds defined for
+            the variables in MOProblem. Defaults to None.
         solver_method (Optional[Union[ScalarMethod, str]]): The method used to minimize the
-        invidual problems in the payoff table method. Defaults to 'scipy_de'.
+            invidual problems in the payoff table method. Defaults to 'scipy_de'.
     
     Returns:
         Tuple[np.ndarray, np.ndarray]: The ideal and nadir points
@@ -158,36 +150,36 @@ def solve_pareto_front_representation_general(
     
     Args:
         objective_evaluator (Callable[[np.ndarray], np.ndarray]): A vector
-        valued function returning objective values given an array of decision
-        variables.
+            valued function returning objective values given an array of decision
+            variables.
         n_of_objectives (int): Numbr of objectives returned by
-        objective_evaluator.
+            objective_evaluator.
         variable_bounds (np.ndarray): The upper and lower bounds of the
-        decision variables. Bound for each variable should be on the rows,
-        with the first column containing lower bounds, and the second column
-        upper bounds. Use np.inf to indicate no bounds.
+            decision variables. Bound for each variable should be on the rows,
+            with the first column containing lower bounds, and the second column
+            upper bounds. Use np.inf to indicate no bounds.
         step (Optional[Union[np.ndarray, float]], optional): Etiher an float
-        or an array of floats. If a single float is given, generates
-        reference points with the objectives having values a step apart
-        between the ideal and nadir points. If an array of floats is given,
-        use the steps defined in the array for each objective's values.
-        Default to 0.1.
+            or an array of floats. If a single float is given, generates
+            reference points with the objectives having values a step apart
+            between the ideal and nadir points. If an array of floats is given,
+            use the steps defined in the array for each objective's values.
+            Default to 0.1.
         eps (Optional[float], optional): An offset to be added to the nadir
-        value to keep the nadir inside the range when generating reference
-        points. Defaults to 1e-6.
+            value to keep the nadir inside the range when generating reference
+            points. Defaults to 1e-6.
         ideal (Optional[np.ndarray], optional): The ideal point of the
-        problem being solved. Defaults to None.
+            problem being solved. Defaults to None.
         nadir (Optional[np.ndarray], optional): The nadir point of the
-        problem being solved. Defaults to None.
-        constraint_evaluator (Optional[Callable[[np.ndarray], np.ndarray]],
-        optional): An evaluator returning values for the constraints defined
-        for the problem. A negative value for a constraint indicates a breach
-        of that constraint. Defaults to None.
+            problem being solved. Defaults to None.
+        constraint_evaluator (Optional[Callable[[np.ndarray], np.ndarray]], optional):
+            An evaluator returning values for the constraints defined
+            for the problem. A negative value for a constraint indicates a breach
+            of that constraint. Defaults to None.
         solver_method (Optional[Union[ScalarMethod, str]], optional): The
-        method used to minimize the achievement scalarization problems
-        arising when calculating Pareto efficient solutions. Defaults to
-        "scipy_de".
-    
+            method used to minimize the achievement scalarization problems
+            arising when calculating Pareto efficient solutions. Defaults to
+            "scipy_de".
+
     Raises:
         MCDMUtilityException: Mismatching sizes of the supplied ideal and
         nadir points between the step, when step is an array. Or the type of
@@ -201,50 +193,32 @@ def solve_pareto_front_representation_general(
     if ideal is None or nadir is None:
         # compure ideal and nadir using payoff table
         ideal, nadir = payoff_table_method_general(
-            objective_evaluator,
-            n_of_objectives,
-            variable_bounds,
-            constraint_evaluator,
+            objective_evaluator, n_of_objectives, variable_bounds, constraint_evaluator,
         )
 
     # use ASF to (almost) gurantee Pareto optimality.
     asf = PointMethodASF(nadir, ideal)
 
-    scalarizer = Scalarizer(
-        objective_evaluator, asf, scalarizer_args={"reference_point": None}
-    )
-    solver = ScalarMinimizer(
-        scalarizer, bounds=variable_bounds, method=solver_method
-    )
+    scalarizer = Scalarizer(objective_evaluator, asf, scalarizer_args={"reference_point": None})
+    solver = ScalarMinimizer(scalarizer, bounds=variable_bounds, method=solver_method)
 
     if type(step) is float:
-        slices = [
-            slice(start, stop + eps, step)
-            for (start, stop) in zip(ideal, nadir)
-        ]
+        slices = [slice(start, stop + eps, step) for (start, stop) in zip(ideal, nadir)]
 
     elif type(step) is np.ndarray:
         if not ideal.shape == nadir.shape == step.shape:
             raise MCDMUtilityException(
-                "The shapes of the supplied step array does not match the "
-                "shape of the ideal and nadir points."
+                "The shapes of the supplied step array does not match the " "shape of the ideal and nadir points."
             )
-        slices = [
-            slice(start, stop + eps, s)
-            for (start, stop, s) in zip(ideal, nadir, step)
-        ]
+        slices = [slice(start, stop + eps, s) for (start, stop, s) in zip(ideal, nadir, step)]
 
     else:
-        raise MCDMUtilityException(
-            "step must be either a numpy array or an float."
-        )
+        raise MCDMUtilityException("step must be either a numpy array or an float.")
 
     z_mesh = np.mgrid[slices].reshape(len(ideal), -1).T
 
     p_front_objectives = np.zeros(z_mesh.shape)
-    p_front_variables = np.zeros(
-        (len(p_front_objectives), len(variable_bounds.squeeze()))
-    )
+    p_front_variables = np.zeros((len(p_front_objectives), len(variable_bounds.squeeze())))
 
     for i, z in enumerate(z_mesh):
         scalarizer._scalarizer_args = {"reference_point": z}
@@ -258,21 +232,14 @@ def solve_pareto_front_representation_general(
 
         # check for dominance, accept only non-dominated solutions
         f_i = objective_evaluator(res["x"])
-        if not np.all(
-            f_i
-            > p_front_objectives[:i][
-                ~np.all(np.isnan(p_front_objectives[:i]), axis=1)
-            ]
-        ):
+        if not np.all(f_i > p_front_objectives[:i][~np.all(np.isnan(p_front_objectives[:i]), axis=1)]):
             p_front_objectives[i] = f_i
             p_front_variables[i] = res["x"]
         elif i < 1:
             p_front_objectives[i] = f_i
             p_front_variables[i] = res["x"]
         else:
-            print(
-                f"{f_i} is dominated by {p_front_objectives[:i][np.all(f_i > p_front_objectives[:i], axis=1)]}"
-            )
+            print(f"{f_i} is dominated by {p_front_objectives[:i][np.all(f_i > p_front_objectives[:i], axis=1)]}")
             p_front_objectives[i] = np.nan
             p_front_variables[i] = np.nan
 
@@ -302,19 +269,19 @@ def solve_pareto_front_representation(
     
     Args:
         problem (MOProblem): The multiobjective minimization problem for which the front is to be solved for.
-        step (Optional[Union[np.ndarray, float]], optional): Etiher an float
-        or an array of floats. If a single float is given, generates
-        reference points with the objectives having values a step apart
-        between the ideal and nadir points. If an array of floats is given,
-        use the steps defined in the array for each objective's values.
-        Default to 0.1.
+            step (Optional[Union[np.ndarray, float]], optional): Etiher an float
+            or an array of floats. If a single float is given, generates
+            reference points with the objectives having values a step apart
+            between the ideal and nadir points. If an array of floats is given,
+            use the steps defined in the array for each objective's values.
+            Default to 0.1.
         eps (Optional[float], optional): An offset to be added to the nadir
-        value to keep the nadir inside the range when generating reference
-        points. Defaults to 1e-6.
+            value to keep the nadir inside the range when generating reference
+            points. Defaults to 1e-6.
         solver_method (Optional[Union[ScalarMethod, str]], optional): The
-        method used to minimize the achievement scalarization problems
-        arising when calculating Pareto efficient solutions. Defaults to
-        "scipy_de".
+            method used to minimize the achievement scalarization problems
+            arising when calculating Pareto efficient solutions. Defaults to
+            "scipy_de".
     
     Returns:
         Tuple[np.ndarray, np.ndarray]: A tuple containing representationns of
