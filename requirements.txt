@@ -1,0 +1,111 @@
+alabaster==0.7.12
+appdirs==1.4.4
+appnope==0.1.0; sys_platform == "darwin" or platform_system == "Darwin" or python_version >= "3.3" and sys_platform == "darwin"
+astroid==2.4.1
+atomicwrites==1.4.0; sys_platform == "win32"
+attrs==19.3.0
+babel==2.8.0
+backcall==0.1.0
+black==19.10b0
+bleach==3.1.5
+certifi==2020.4.5.1
+chardet==3.0.4
+click==7.1.2
+colorama==0.4.3; python_version >= "3.3" and sys_platform == "win32" or sys_platform == "win32"
+commonmark==0.9.1
+cycler==0.10.0
+decorator==4.4.2
+defusedxml==0.6.0
+desdeo-problem==0.13.0
+-e git+https://github.com/industrial-optimization-group/desdeo-tools@924f4df39121bc1d51367e15113ed6bc97610afe#egg=desdeo-tools
+diversipy==0.8
+docutils==0.16
+entrypoints==0.3
+flake8==3.8.2
+graphviz==0.14
+idna==2.9
+imagesize==1.2.0
+importlib-metadata==1.6.0; python_version < "3.8"
+ipykernel==5.3.0
+ipython==7.15.0
+ipython-genutils==0.2.0
+ipywidgets==7.5.1
+isort==4.3.21
+jedi==0.17.0
+jinja2==2.11.2
+joblib==0.15.1
+jsonschema==3.2.0
+jupyter==1.0.0
+jupyter-client==6.1.3
+jupyter-console==6.1.0
+jupyter-core==4.6.3
+kiwisolver==1.2.0
+lazy-object-proxy==1.4.3
+markupsafe==1.1.1
+matplotlib==3.2.1
+mccabe==0.6.1
+mistune==0.8.4
+more-itertools==8.3.0
+nbconvert==5.6.1
+nbformat==5.0.6
+notebook==6.0.3
+numpy==1.18.4
+optproblems==1.3
+packaging==20.4
+pandas==0.25.3
+pandocfilters==1.4.2
+parso==0.7.0
+pathspec==0.8.0
+pexpect==4.8.0; python_version >= "3.3" and sys_platform != "win32" or sys_platform != "win32"
+pickleshare==0.7.5
+pluggy==0.13.1
+prometheus-client==0.8.0
+prompt-toolkit==3.0.5
+ptyprocess==0.6.0; python_version >= "3.3" and sys_platform != "win32" or sys_platform != "win32" or os_name != "nt" or python_version >= "3.3" and sys_platform != "win32" and (python_version >= "3.3" and sys_platform != "win32" or sys_platform != "win32")
+py==1.8.1
+pycodestyle==2.6.0
+pyflakes==2.2.0
+pygments==2.6.1
+pylint==2.5.2
+pyparsing==2.4.7
+pyrsistent==0.16.0
+pytest==5.4.2
+python-dateutil==2.8.1
+pytz==2020.1
+pywin32==227; sys_platform == "win32"
+pywinpty==0.5.7; os_name == "nt"
+pyzmq==19.0.1
+qtconsole==4.7.4
+qtpy==1.9.0
+recommonmark==0.6.0
+regex==2020.5.14
+requests==2.23.0
+rope==0.16.0
+rstcheck==3.3.1
+scikit-learn==0.21.3
+scipy==1.4.1
+send2trash==1.5.0
+six==1.15.0
+snowballstemmer==2.0.0
+sphinx==3.0.4
+sphinx-autodoc-typehints==1.10.3
+sphinx-automodapi==0.12
+sphinx-rtd-theme==0.4.3
+sphinxcontrib-applehelp==1.0.2
+sphinxcontrib-devhelp==1.0.2
+sphinxcontrib-htmlhelp==1.0.3
+sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-qthelp==1.0.3
+sphinxcontrib-serializinghtml==1.1.4
+terminado==0.8.3
+testpath==0.4.4
+toml==0.10.1
+tornado==6.0.4
+traitlets==4.3.3
+typed-ast==1.4.1
+urllib3==1.25.9
+wcwidth==0.1.9
+webencodings==0.5.1
+widgetsnbextension==3.5.1
+wrapt==1.12.1
+zipp==3.1.0; python_version < "3.8"
