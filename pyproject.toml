@@ -7,14 +7,12 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-desdeo-tools = { git = "https://github.com/industrial-optimization-group/desdeo-tools", branch="master" }
-desdeo-problem = "^0.13.0"
+desdeo-tools = "^0.2.6"
+desdeo-problem = "^0.15.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.1"
 black = "^19.10b0"
-jupyter = "^1.0.0"
-matplotlib = "^3.2.1"
 flake8 = "^3.7.9"
 pylint = "^2.4.4"
 rope = "^0.16.0"
@@ -23,7 +21,6 @@ rstcheck = "^3.3.1"
 sphinx_rtd_theme = "^0.4.3"
 sphinx_autodoc_typehints = "^1.10.3"
 sphinx-automodapi = "^0.12"
-graphviz = "^0.14"
 recommonmark = "^0.6.0"
 
 [build-system]

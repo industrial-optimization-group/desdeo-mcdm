@@ -5,13 +5,13 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from desdeo_problem.Problem import MOProblem
-
-from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-from desdeo_mcdm.utilities.solvers import payoff_table_method
 from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
 from desdeo_tools.scalarization.ASF import AugmentedGuessASF, MaxOfTwoASF, PointMethodASF, SimpleASF, StomASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
+
+from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
+from desdeo_mcdm.utilities.solvers import payoff_table_method
 
 
 class NimbusException(Exception):
@@ -925,12 +925,9 @@ class NIMBUS(InteractiveMethod):
 
 
 if __name__ == "__main__":
-    from desdeo_problem.Problem import MOProblem
     from desdeo_problem.Objective import _ScalarObjective
     from desdeo_problem.Variable import variable_builder
     from desdeo_problem.Constraint import ScalarConstraint
-    from desdeo_tools.scalarization.Scalarizer import Scalarizer
-    from scipy.optimize import differential_evolution
 
     # create the problem
     def f_1(x):
