@@ -13,7 +13,7 @@ Requires [poetry](https://python-poetry.org/). See `pyproject.toml` for Python p
 
 ## Documentation
 
-Proper documentation coming soon. For the moment, see the notebooks in the example folder for guidance.
+Documentation for this package can be found [here](https://desdeo-mcdm.readthedocs.io/en/latest/)
 
 ## Currently implemented methods
 
