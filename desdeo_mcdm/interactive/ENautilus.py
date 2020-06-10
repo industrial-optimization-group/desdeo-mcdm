@@ -1,11 +1,11 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from desdeo_tools.interaction.request import BaseRequest
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-from desdeo_tools.interaction.request import BaseRequest
 
 
 class ENautilusException(Exception):
@@ -249,6 +249,7 @@ class ENautilus(InteractiveMethod):
         self._preferred_point = request.content["points"][preferred_point_index]
 
         if self._n_iterations_left <= 1:
+            self._n_iterations_left = 0
             return ENautilusStopRequest(self._preferred_point)
 
         self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
@@ -317,7 +318,7 @@ class ENautilus(InteractiveMethod):
             np.ndarray: The intermediate points as a 2D array.
         """
         zs = ((n_iterations_left - 1) / n_iterations_left) * preferred_point + (1 / n_iterations_left) * zbars
-        return zs
+        return np.atleast_2d(zs)
 
     def calculate_bounds(
         self, pareto_front: np.ndarray, intermediate_points: np.ndarray,
@@ -327,7 +328,7 @@ class ENautilus(InteractiveMethod):
 
         Args:
             pareto_front (np.ndarray): The Pareto optimal front.
-            intermediate_points (np.ndarray): The current intermedaite points.
+            intermediate_points (np.ndarray): The current intermedaite points as a 2D array.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: The lower and upper bounds for each of the intermediate points.
@@ -337,7 +338,7 @@ class ENautilus(InteractiveMethod):
         new_lower_bounds = np.zeros((n_points, _pareto_front.shape[1]))
         new_upper_bounds = np.zeros((n_points, _pareto_front.shape[1]))
 
-        for i, point in enumerate(intermediate_points):
+        for i, point in enumerate(np.atleast_2d(intermediate_points)):
             # TODO: vectorize this loop
             for r in range(_pareto_front.shape[1]):
                 mask = np.zeros(_pareto_front.shape[1], dtype=bool)
@@ -356,7 +357,7 @@ class ENautilus(InteractiveMethod):
         return new_lower_bounds, new_upper_bounds
 
     def calculate_distances(self, intermediate_points: np.ndarray, zbars: np.ndarray, nadir: np.ndarray) -> np.ndarray:
-        distances = np.linalg.norm(intermediate_points - nadir, axis=1) / np.linalg.norm(
+        distances = np.linalg.norm(np.atleast_2d(intermediate_points) - nadir, axis=1) / np.linalg.norm(
             np.atleast_2d(zbars) - nadir, axis=1
         )
         """Calculates the distance to the Pareto front for each intermediate
@@ -422,6 +423,8 @@ if __name__ == "__main__":
         print(req.content["points"])
         req.response = {"preferred_point_index": 0}
 
+    print(method._n_iterations_left)
     req = method.iterate(req)
+    print(method._n_iterations_left)
     print(method._distance)
     print(req.content["solution"])
