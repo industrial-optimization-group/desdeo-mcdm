@@ -6,7 +6,6 @@ from typing import Callable, Optional, Tuple, Union
 
 import numpy as np
 from desdeo_problem.Problem import MOProblem
-
 from desdeo_tools.scalarization.ASF import ASFBase, PointMethodASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
@@ -189,6 +188,10 @@ def solve_pareto_front_representation_general(
         Tuple[np.ndarray, np.ndarray]: A tuple containing representationns of
         the Pareto optimal variable values, and the corresponsing objective
         values.
+
+    Note:
+        The objective evaluator should be defined such that minimization is
+        expected in each of the objectives.
     """
     if ideal is None or nadir is None:
         # compure ideal and nadir using payoff table
@@ -196,21 +199,25 @@ def solve_pareto_front_representation_general(
             objective_evaluator, n_of_objectives, variable_bounds, constraint_evaluator,
         )
 
-    # use ASF to (almost) gurantee Pareto optimality.
+    # use ASF to (almost) guarantee Pareto optimality.
     asf = PointMethodASF(nadir, ideal)
 
     scalarizer = Scalarizer(objective_evaluator, asf, scalarizer_args={"reference_point": None})
     solver = ScalarMinimizer(scalarizer, bounds=variable_bounds, method=solver_method)
 
+    # bounds to be used to compute slices
+    stacked = np.stack((ideal, nadir)).T
+    lower_slice_b, upper_slice_b = np.min(stacked, axis=1), np.max(stacked, axis=1)
+
     if type(step) is float:
-        slices = [slice(start, stop + eps, step) for (start, stop) in zip(ideal, nadir)]
+        slices = [slice(start, stop + eps, step) for (start, stop) in zip(lower_slice_b, upper_slice_b)]
 
     elif type(step) is np.ndarray:
         if not ideal.shape == nadir.shape == step.shape:
             raise MCDMUtilityException(
                 "The shapes of the supplied step array does not match the " "shape of the ideal and nadir points."
             )
-        slices = [slice(start, stop + eps, s) for (start, stop, s) in zip(ideal, nadir, step)]
+        slices = [slice(start, stop + eps, s) for (start, stop, s) in zip(lower_slice_b, upper_slice_b, step)]
 
     else:
         raise MCDMUtilityException("step must be either a numpy array or an float.")
@@ -239,7 +246,6 @@ def solve_pareto_front_representation_general(
             p_front_objectives[i] = f_i
             p_front_variables[i] = res["x"]
         else:
-            print(f"{f_i} is dominated by {p_front_objectives[:i][np.all(f_i > p_front_objectives[:i], axis=1)]}")
             p_front_objectives[i] = np.nan
             p_front_variables[i] = np.nan
 
@@ -269,7 +275,7 @@ def solve_pareto_front_representation(
     
     Args:
         problem (MOProblem): The multiobjective minimization problem for which the front is to be solved for.
-            step (Optional[Union[np.ndarray, float]], optional): Etiher an float
+        step (Optional[Union[np.ndarray, float]], optional): Either a float
             or an array of floats. If a single float is given, generates
             reference points with the objectives having values a step apart
             between the ideal and nadir points. If an array of floats is given,
@@ -284,7 +290,7 @@ def solve_pareto_front_representation(
             "scipy_de".
     
     Returns:
-        Tuple[np.ndarray, np.ndarray]: A tuple containing representationns of
+        Tuple[np.ndarray, np.ndarray]: A tuple containing representations of
         the Pareto optimal variable values, and the corresponsing objective
         values.
     """
@@ -293,30 +299,22 @@ def solve_pareto_front_representation(
     else:
         constraints = None
 
-    return solve_pareto_front_representation_general(
+    var_values, obj_values = solve_pareto_front_representation_general(
         lambda x: problem.evaluate(x).objectives,
         problem.n_of_objectives,
         problem.get_variable_bounds(),
         step,
         eps,
-        problem.ideal,
-        problem.nadir,
+        problem.ideal * problem._max_multiplier,
+        problem.nadir * problem._max_multiplier,
         constraints,
         solver_method,
     )
 
+    return var_values, obj_values * problem._max_multiplier
+
 
 if __name__ == "__main__":
-    from desdeo_problem.Problem import MOProblem
-    from desdeo_problem.testproblems.TestProblems import test_problem_builder
-    from desdeo_problem.Objective import _ScalarObjective
-    from desdeo_problem.Variable import variable_builder
-    from desdeo_problem.Constraint import ScalarConstraint
-    from desdeo_tools.scalarization.Scalarizer import Scalarizer
-    from desdeo_tools.solver.ScalarSolver import ScalarMethod
-
-    from scipy.optimize import differential_evolution
-
     # # create the problem
     # def f_1(x):
     #     res = 4.07 + 2.27 * x[:, 0]
@@ -361,27 +359,4 @@ if __name__ == "__main__":
     # )
     # problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5],)
 
-    scalar_method = ScalarMethod(
-        lambda x, _, **ys: differential_evolution(x, **ys),
-        method_args={"polish": True, "maxiter": 1000},
-        use_scipy=True,
-    )
-
-    problem = test_problem_builder("DTLZ1", 3, 2)
-    print(problem.get_variable_bounds())
-    problem.ideal = np.zeros(2)
-    problem.nadir = np.ones(2)
-
-    res = solve_pareto_front_representation_general(
-        lambda x: problem.evaluate(x).objectives,
-        problem.n_of_objectives,
-        problem.get_variable_bounds(),
-        step=0.2,
-        eps=1e-6,
-        ideal=problem.ideal,
-        nadir=problem.nadir,
-        constraint_evaluator=None,
-        solver_method=scalar_method,
-    )
-
-    print(res[1].shape)
+    pass
