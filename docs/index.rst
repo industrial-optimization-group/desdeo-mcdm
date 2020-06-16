@@ -13,6 +13,7 @@ desdeo-mcdm's documentation
    README <README>
    background/index
    api
+   examples
    
 
 
