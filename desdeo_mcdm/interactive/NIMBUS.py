@@ -661,16 +661,18 @@ class NIMBUS(InteractiveMethod):
             indices (List[int]): Indices of the solutions to be saved.
         
         Returns:
-            Tuple[NimbusIntermediateSolutionsRequest, None]: An intermediate solutins request asking the
+            Tuple[NimbusIntermediateSolutionsRequest, None]: An intermediate solutions request asking the
             decision maker whether they would like to generate intermediata solutions between two existing solutions.
             Also returns a plot request to visualize the available solutions between which the intermediate solutions
             should be computed.
         """
-        self._archive_objectives.extend(list(objectives[indices]))
-        self._archive_solutions.extend(list(decision_variables[indices]))
-
         mask = np.ones(objectives.shape[0], dtype=bool)
-        mask[indices] = False
+
+        if len(indices) > 0:
+            self._archive_objectives.extend(list(objectives[indices]))
+            self._archive_solutions.extend(list(decision_variables[indices]))
+
+            mask[indices] = False
 
         req_objectives = self._archive_objectives + list(objectives[mask])
         req_solutions = self._archive_solutions + list(decision_variables[mask])
@@ -973,7 +975,7 @@ if __name__ == "__main__":
     response["number_of_solutions"] = 3
     reqs.response = response
     res_1 = method.iterate(reqs)[0]
-    res_1.response = {"indices": [0, 1, 2]}
+    res_1.response = {"indices": []}
 
     res_2 = method.iterate(res_1)[0]
     response = {}
