@@ -22,6 +22,7 @@ class NautilusInitialRequest(BaseRequest):
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
+        self.n_objectives = len(ideal)
         msg = (
             "Please specify the number of iterations as 'n_iterations' to be carried out.\n"
             "Please specify as 'preference_method' whether to \n"
@@ -45,12 +46,12 @@ class NautilusInitialRequest(BaseRequest):
         """
         if "n_iterations" not in response:
             raise NautilusException("'n_iterations' entry missing")
-        self.validate_preferences()
+        self.validate_preferences(response)
         n_iterations = response["n_iterations"]
 
         if not isinstance(n_iterations, int) or int(n_iterations) < 1:
             raise NautilusException("'n_iterations' must be a positive integer greater than zero")
-    # TODO: Continue here
+
     def validate_preferences(self, response: Dict) -> None:
         """
         Validate decision maker's preferences.
@@ -61,8 +62,29 @@ class NautilusInitialRequest(BaseRequest):
             raise NautilusException("please specify either preference method 1 (rank) or 2 (percentages).")
         if "preference_info" not in response:
             raise NautilusException("'preference_info entry missing")
-        if response["preference_method"] == 1 and response["preference_info"]:
-            pass
+        if response["preference_method"] == 1:  # ranks
+            if len(response["preference_info"]) < self.n_objectives:
+                msg = "Number of ranks ({}) do not match the number of objectives '({})." \
+                    .format(len(response["preference_info"]), self.n_objectives)
+                raise NautilusException(msg)
+            elif not (1 <= max(response["preference_info"]) <= self.n_objectives):
+                msg = "The minimum index of importance must be greater or equal "
+                "to 1 and the maximum index of improtance must be less "
+                "than or equal to the number of objectives in the "
+                "problem, which is {}. Check the indices {}" \
+                    .format(self.n_objectives, response["preference_info"])
+                raise NautilusException(msg)
+        elif response["preference_method"] == 2:  # percentages
+            if len(response["preference_info"]) < self.n_objectives:
+                msg = "Number of given percentages ({}) do not match the number of objectives '({})." \
+                    .format(len(response["preference_info"]), self.n_objectives)
+                raise NautilusException(msg)
+            elif np.sum(response["preference_info"]) != 100:
+                msg = (
+                    "The sum of the percentages must be 100. Current sum" " is {}."
+                ).format(np.sum(response["preference_info"]))
+                raise NautilusException(msg)
+
 
     @classmethod
     def init_with_method(cls, method):
@@ -74,7 +96,7 @@ class NautilusInitialRequest(BaseRequest):
         self._response = response
 
 
-class NautilusRequest(BaseRequest):
+class NautilusRequest(BaseRequest, NautilusInitialRequest):
     """A request class to handle the intermediate requests.
 
     """
@@ -83,16 +105,23 @@ class NautilusRequest(BaseRequest):
             self,
             ideal: np.ndarray,
             nadir: np.ndarray,
-            points: np.ndarray,
+            n_iterations: int,
             lower_bounds: np.ndarray,
             upper_bounds: np.ndarray,
+            distances: np.ndarray,
             minimize: List[int],
     ):
 
-        msg = "Please select whether to \n" \
-              "1. Rank the objectives according importance of improving their value (press 1).\n" \
-              "2. Specify percentages reflecting how much would you like to improve each of the current objective " \
-              "values (press 2)."
+        msg = (
+            "In case you wish to change the number of remaining iterations lower, please specify the number as 'n_iterations'.\n"
+            # how dm communicates this in ui? 
+            "In case you wish to take a step back to the previous iteration point, please state 'True' here.\n"  
+            "Please specify as 'preference_method' whether to \n"
+            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
+            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
+            "values."
+            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
+            "each objective as 'preference_info'.")
         content = {
             "message": msg,
             "ideal": ideal,
@@ -106,13 +135,25 @@ class NautilusRequest(BaseRequest):
         super().__init__("reference_point_preference", "required", content=content)
 
     def validator(self, response: Dict) -> None:
-        if "preference_method" not in response:
-            raise NautilusException("'preference_method' not specified")
+        super().validate_preferences(response)
+        if response["n_iterations"]:
+            self.validate_new_n_iterations(response["n_iterations"])
 
-        pref_method = response["preference_method"]
+    def validate_new_n_iterations(self, itn: int) -> None:
+        if itn > n_iterations:
+            msg = (
+                "The given number of iterations '{}' left should be less "
+                "than the current number of iterations left '{}'"
+            ).format(itn, n_iterations)
+            raise NautilusException(msg)
+        elif itn < 0:
+            msg = (
+                "The given number of iterations left "
+                "should be positive. Given iterations '{}'".format(str(itn))
+            )
+            raise NautilusException(msg)
 
-        if pref_method not in [1, 2]:
-            raise NautilusException("Please select either method 1 or 2.")
+
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
@@ -216,8 +257,12 @@ class Nautilus(InteractiveMethod):
 
         self._distance = None
 
-        self._preferred_point = None
-        self._projection_index = None
+        # self._preferred_point = None
+        # self._projection_index = None
+
+        # preference information
+        self._preference_method = None
+        self._preference_info = None
 
         self._n_iterations = None
         self._n_iterations_left = None
@@ -246,20 +291,22 @@ class Nautilus(InteractiveMethod):
         self._n_iterations = request.response["n_iterations"]
         self._n_iterations_left = self._n_iterations
 
+        self._preference_method = request.response["preference_method"]
+        self._preference_info = request.response["preference_info"]
+
         return NautilusRequest(
             self._ideal, self._nadir, self._minimize
         )
 
-    def handle_request(self, request: ENautilusRequest) -> Union[ENautilusRequest, ENautilusStopRequest]:
+    def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
         """Handles the intermediate requests.
 
         """
-        preferred_point_index = request.response["preferred_point_index"]
-        self._preferred_point = request.content["points"][preferred_point_index]
+
 
         if self._n_iterations_left <= 1:
             self._n_iterations_left = 0
-            return ENautilusStopRequest(self._preferred_point)
+            return NautilusStopRequest(self._preferred_point)
 
         self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
         self._reachable_ub = request.content["upper_bounds"][preferred_point_index]
@@ -279,7 +326,7 @@ class Nautilus(InteractiveMethod):
         new_lower_bounds, new_upper_bounds = self.calculate_bounds(self._pareto_front, zs)
         distances = self.calculate_distances(zs, zbars, self._nadir)
 
-        return ENautilusRequest(
+        return NautilusRequest(
             self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances, self._minimize
         )
 
@@ -411,7 +458,7 @@ if __name__ == "__main__":
     ideal = np.min(front, axis=0)
     nadir = np.max(front, axis=0)
 
-    method = ENautilus((front), ideal, nadir)
+    method = Nautilus((front), ideal, nadir)
 
     req = method.start()
 
