@@ -8,6 +8,65 @@ from sklearn.metrics import pairwise_distances_argmin_min
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
 
+def validate_response(n_objectives, response: Dict) -> None:
+    """
+    Validate decision maker's response.
+    """
+    if "n_iterations" not in response:
+        raise NautilusException("'n_iterations' entry missing")
+    validate_preferences(n_objectives, response)
+    n_iterations = response["n_iterations"]
+
+    if not isinstance(n_iterations, int) or int(n_iterations) < 1:
+        raise NautilusException("'n_iterations' must be a positive integer greater than zero")
+
+
+def validate_preferences(n_objectives: int, response: Dict) -> None:
+    """
+    Validate decision maker's preferences.
+    """
+    if "preference_method" not in response:
+        raise NautilusException("'preference_method entry missing")
+    if response["preference_method"] not in [1, 2]:
+        raise NautilusException("please specify either preference method 1 (rank) or 2 (percentages).")
+    if "preference_info" not in response:
+        raise NautilusException("'preference_info entry missing")
+    if response["preference_method"] == 1:  # ranks
+        if len(response["preference_info"]) < n_objectives:
+            msg = "Number of ranks ({}) do not match the number of objectives '({})." \
+                .format(len(response["preference_info"]), n_objectives)
+            raise NautilusException(msg)
+        elif not (1 <= max(response["preference_info"]) <= n_objectives):
+            msg = "The minimum index of importance must be greater or equal "
+            "to 1 and the maximum index of improtance must be less "
+            "than or equal to the number of objectives in the "
+            "problem, which is {}. Check the indices {}" \
+                .format(n_objectives, response["preference_info"])
+            raise NautilusException(msg)
+    elif response["preference_method"] == 2:  # percentages
+        if len(response["preference_info"]) < n_objectives:
+            msg = "Number of given percentages ({}) do not match the number of objectives '({})." \
+                .format(len(response["preference_info"]), n_objectives)
+            raise NautilusException(msg)
+        elif np.sum(response["preference_info"]) != 100:
+            msg = (
+                "The sum of the percentages must be 100. Current sum" " is {}."
+            ).format(np.sum(response["preference_info"]))
+            raise NautilusException(msg)
+
+
+def validate_itn(itn: int) -> None:
+    """
+    Validate decision maker's new preference for number of iterations left.
+    """
+    if itn < 0:
+        msg = (
+            "The given number of iterations left "
+            "should be positive. Given iterations '{}'".format(str(itn))
+        )
+        raise NautilusException(msg)
+
+
 class NautilusException(Exception):
     """Raised when an exception related to Nautilus is encountered.
 
@@ -40,51 +99,6 @@ class NautilusInitialRequest(BaseRequest):
 
         super().__init__("reference_point_preference", "required", content=content)
 
-    def validator(self, response: Dict) -> None:
-        """
-        Validate decision maker's response.
-        """
-        if "n_iterations" not in response:
-            raise NautilusException("'n_iterations' entry missing")
-        self.validate_preferences(response)
-        n_iterations = response["n_iterations"]
-
-        if not isinstance(n_iterations, int) or int(n_iterations) < 1:
-            raise NautilusException("'n_iterations' must be a positive integer greater than zero")
-
-    def validate_preferences(self, response: Dict) -> None:
-        """
-        Validate decision maker's preferences.
-        """
-        if "preference_method" not in response:
-            raise NautilusException("'preference_method entry missing")
-        if response["preference_method"] not in [1, 2]:
-            raise NautilusException("please specify either preference method 1 (rank) or 2 (percentages).")
-        if "preference_info" not in response:
-            raise NautilusException("'preference_info entry missing")
-        if response["preference_method"] == 1:  # ranks
-            if len(response["preference_info"]) < self.n_objectives:
-                msg = "Number of ranks ({}) do not match the number of objectives '({})." \
-                    .format(len(response["preference_info"]), self.n_objectives)
-                raise NautilusException(msg)
-            elif not (1 <= max(response["preference_info"]) <= self.n_objectives):
-                msg = "The minimum index of importance must be greater or equal "
-                "to 1 and the maximum index of improtance must be less "
-                "than or equal to the number of objectives in the "
-                "problem, which is {}. Check the indices {}" \
-                    .format(self.n_objectives, response["preference_info"])
-                raise NautilusException(msg)
-        elif response["preference_method"] == 2:  # percentages
-            if len(response["preference_info"]) < self.n_objectives:
-                msg = "Number of given percentages ({}) do not match the number of objectives '({})." \
-                    .format(len(response["preference_info"]), self.n_objectives)
-                raise NautilusException(msg)
-            elif np.sum(response["preference_info"]) != 100:
-                msg = (
-                    "The sum of the percentages must be 100. Current sum" " is {}."
-                ).format(np.sum(response["preference_info"]))
-                raise NautilusException(msg)
-
 
     @classmethod
     def init_with_method(cls, method):
@@ -92,11 +106,11 @@ class NautilusInitialRequest(BaseRequest):
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
-        self.validator(response)
+        validate_response(self.n_objectives, response)
         self._response = response
 
 
-class NautilusRequest(BaseRequest, NautilusInitialRequest):
+class NautilusRequest(BaseRequest):
     """A request class to handle the intermediate requests.
 
     """
@@ -111,11 +125,12 @@ class NautilusRequest(BaseRequest, NautilusInitialRequest):
             distances: np.ndarray,
             minimize: List[int],
     ):
-
+        self.n_objectives = len(ideal)
         msg = (
-            "In case you wish to change the number of remaining iterations lower, please specify the number as 'n_iterations'.\n"
+            "In case you wish to change the number of remaining iterations lower, please specify the number as "
+            "'n_iterations'.\n "
             # how dm communicates this in ui? 
-            "In case you wish to take a step back to the previous iteration point, please state 'True' here.\n"  
+            "In case you wish to take a step back to the previous iteration point, please state 'True' here.\n"
             "Please specify as 'preference_method' whether to \n"
             "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
             "2. Specify percentages reflecting how much would you like to improve each of the current objective "
@@ -134,30 +149,12 @@ class NautilusRequest(BaseRequest, NautilusInitialRequest):
 
         super().__init__("reference_point_preference", "required", content=content)
 
-    def validator(self, response: Dict) -> None:
-        super().validate_preferences(response)
-        if response["n_iterations"]:
-            self.validate_new_n_iterations(response["n_iterations"])
-
-    def validate_new_n_iterations(self, itn: int) -> None:
-        if itn > n_iterations:
-            msg = (
-                "The given number of iterations '{}' left should be less "
-                "than the current number of iterations left '{}'"
-            ).format(itn, n_iterations)
-            raise NautilusException(msg)
-        elif itn < 0:
-            msg = (
-                "The given number of iterations left "
-                "should be positive. Given iterations '{}'".format(str(itn))
-            )
-            raise NautilusException(msg)
-
-
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
-        self.validator(response)
+        validate_response(self.n_objectives, response)
+        if response["n_iterations"]:
+            validate_itn(response["n_iterations"])
         self._response = response
 
 
@@ -176,7 +173,6 @@ class NautilusStopRequest(BaseRequest):
 class Nautilus(InteractiveMethod):
     def __init__(
             self,
-            # pareto_front: np.ndarray,
             ideal: np.ndarray,
             nadir: np.ndarray,
             objective_names: Optional[List[str]] = None,
@@ -185,9 +181,6 @@ class Nautilus(InteractiveMethod):
         """
 
         Args:
-            pareto_front (np.ndarray): A two dimensional numpy array
-            representing a Pareto front with objective vectors on each of its
-            rows.
             ideal (np.ndarray): The ideal objective vector of the problem
             being represented by the Pareto front.
             nadir (np.ndarray): The nadir objective vector of the problem
@@ -204,21 +197,6 @@ class Nautilus(InteractiveMethod):
             encountered among the supplies arguments.
         """
         # NOTE: no pareto front as input(?) - pareto optimal points are calculated at every iteration- not beforehand
-        """
-        if not pareto_front.ndim == 2:
-            raise NautilusException(
-                "The supplied Pareto front should be a two dimensional array. Found "
-                f" number of dimensions {pareto_front.ndim}."
-            )
-
-        if not ideal.shape[0] == pareto_front.shape[1]:
-            raise NautilusException(
-                "The Pareto front must consist of objective vectors with the "
-                "same number of objectives as defined in the ideal and nadir "
-                "points."
-            )
-            
-        """
 
         if not ideal.shape == nadir.shape:
             raise NautilusException("The dimensions of the ideal and nadir point do not match.")
@@ -239,26 +217,20 @@ class Nautilus(InteractiveMethod):
         else:
             self._minimize = [1 for _ in range(ideal.shape[0])]
 
+        # Used to calculate the utopian point from the ideal point
+        self.__epsilon: float = 0.0
+
         self._ideal = ideal
         self._nadir = nadir
 
-        # in objective space!
-        # self._pareto_front = pareto_front
-
-        # bounds of the rechable region
+        # bounds of the reachable region
         self._reachable_ub = self._nadir
         self._reachable_lb = self._ideal
-
-        # currently reachable solution as a list of indices of the Pareto front
-        # self._reachable_idx = list(range(0, self._pareto_front.shape[0]))
 
         # current iteration step number
         self._step_number = 1
 
         self._distance = None
-
-        # self._preferred_point = None
-        # self._projection_index = None
 
         # preference information
         self._preference_method = None
@@ -266,6 +238,12 @@ class Nautilus(InteractiveMethod):
 
         self._n_iterations = None
         self._n_iterations_left = None
+
+        # flags for the iteration phase
+        self.__use_previous_preference: bool = False
+        self.__step_back: bool = False
+        self.__short_step: bool = False
+        self.__first_iteration: bool = True
 
     def start(self) -> NautilusInitialRequest:
         return NautilusInitialRequest.init_with_method(self)
@@ -294,15 +272,16 @@ class Nautilus(InteractiveMethod):
         self._preference_method = request.response["preference_method"]
         self._preference_info = request.response["preference_info"]
 
+        # TODO: continue here, solve problem, calculate first iteration point
+
         return NautilusRequest(
-            self._ideal, self._nadir, self._minimize
+            self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
         )
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
         """Handles the intermediate requests.
 
         """
-
 
         if self._n_iterations_left <= 1:
             self._n_iterations_left = 0
@@ -330,122 +309,6 @@ class Nautilus(InteractiveMethod):
             self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances, self._minimize
         )
 
-    def calculate_representative_points(
-            self, pareto_front: np.ndarray, subset_indices: List[int], n_points: int
-    ) -> np.ndarray:
-        """Calcualtes the most representative points on the Pareto front. The points are clustered using k-means.
-
-        Args:
-            pareto_front (np.ndarray): The Pareto front.
-            subset_indices (List[int]): A list of indices representing the
-            subset of the points on the Pareto front for which the
-            representative points should be calculated.
-            n_points (int): The number of representative points to be calculated.
-
-        Returns:
-            np.ndarray: A 2D array of the most representative points. If the
-            subset of Pareto efficient points is less than n_points, returns
-            the subset of the Pareto front.
-        """
-        if len(np.atleast_1d(subset_indices)) > n_points:
-            kmeans = KMeans(n_clusters=n_points)
-            kmeans.fit(pareto_front[subset_indices])
-
-            closest, _ = pairwise_distances_argmin_min(kmeans.cluster_centers_, pareto_front[subset_indices])
-
-            zbars = pareto_front[subset_indices][closest]
-
-        else:
-            zbars = pareto_front[subset_indices]
-
-        return zbars
-
-    def calculate_intermediate_points(
-            self, preferred_point: np.ndarray, zbars: np.ndarray, n_iterations_left: int,
-    ) -> np.ndarray:
-        """Calcualtes the intermediate points between representative points an a preferred point.
-
-        Args:
-            preferred_point (np.ndarray): The preferred point, 1D array.
-            zbars (np.ndarray): The representative points, 2D array.
-            n_iterations_left (int): The number of iterations left.
-
-        Returns:
-            np.ndarray: The intermediate points as a 2D array.
-        """
-        zs = ((n_iterations_left - 1) / n_iterations_left) * preferred_point + (1 / n_iterations_left) * zbars
-        return np.atleast_2d(zs)
-
-    def calculate_bounds(
-            self, pareto_front: np.ndarray, intermediate_points: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Calculate the new bounds of the reachable points on the Pareto
-        optimal front from each of the intermediate points.
-
-        Args:
-            pareto_front (np.ndarray): The Pareto optimal front.
-            intermediate_points (np.ndarray): The current intermedaite points as a 2D array.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: The lower and upper bounds for each of the intermediate points.
-        """
-        _pareto_front = np.atleast_2d(pareto_front)
-        n_points = np.atleast_2d(intermediate_points).shape[0]
-        new_lower_bounds = np.zeros((n_points, _pareto_front.shape[1]))
-        new_upper_bounds = np.zeros((n_points, _pareto_front.shape[1]))
-
-        for i, point in enumerate(np.atleast_2d(intermediate_points)):
-            # TODO: vectorize this loop
-            for r in range(_pareto_front.shape[1]):
-                mask = np.zeros(_pareto_front.shape[1], dtype=bool)
-                mask[r] = True
-
-                subject_to = _pareto_front[:, ~mask].reshape((_pareto_front.shape[0], _pareto_front.shape[1] - 1))
-
-                con_mask = np.all(subject_to <= point[~mask], axis=1)
-
-                min_val = np.min(_pareto_front[con_mask, mask])
-                max_val = np.max(_pareto_front[con_mask, mask])
-
-                new_lower_bounds[i, r] = min_val
-                new_upper_bounds[i, r] = max_val
-
-        return new_lower_bounds, new_upper_bounds
-
-    def calculate_distances(self, intermediate_points: np.ndarray, zbars: np.ndarray, nadir: np.ndarray) -> np.ndarray:
-        distances = np.linalg.norm(np.atleast_2d(intermediate_points) - nadir, axis=1) / np.linalg.norm(
-            np.atleast_2d(zbars) - nadir, axis=1
-        )
-        """Calculates the distance to the Pareto front for each intermediate
-        point given utilizing representative points representing the
-        intermediate points.
-
-        Args:
-            intermediate_points (np.ndarray): The intermediate points, 2D array.
-            zbars (np.ndarray): The representative points corresponding to the intermediate points, 2D array.
-            nadir (np.ndarray): The nadir point, 1D array.
-
-        Returns:
-            np.ndarray: The distances calculated for each intermediate point to the Pareto front.
-        """
-        return distances * 100
-
-    def calculate_reachable_point_indices(
-            self, pareto_front: np.ndarray, lower_bounds: np.ndarray, upper_bounds: np.ndarray,
-    ) -> List[int]:
-        """Calculate the indices of the reachable Pareto optimal solutions
-        based on lower and upper bounds.
-
-        Returns:
-            List[int]: List of the indices of the reachable solutions.
-        """
-        low_idx = np.all(pareto_front >= lower_bounds, axis=1)
-        up_idx = np.all(pareto_front <= upper_bounds, axis=1)
-
-        reachable_idx = np.argwhere(low_idx & up_idx).squeeze()
-
-        return reachable_idx
-
 
 if __name__ == "__main__":
     # front = np.array([[1, 2, 3], [2, 3, 4], [2, 2, 3], [3, 2, 1]], dtype=float)
@@ -458,19 +321,20 @@ if __name__ == "__main__":
     ideal = np.min(front, axis=0)
     nadir = np.max(front, axis=0)
 
-    method = Nautilus((front), ideal, nadir)
+    method = Nautilus(ideal, nadir)
 
     req = method.start()
 
     n_iterations = 11
-    n_points = 4
 
     req.response = {
         "n_iterations": n_iterations,
-        "n_points": n_points,
+        "preference_method": 1,
+        "preference_info": [1, 2],
     }
 
     req = method.iterate(req)
+    """
     req.response = {"preferred_point_index": 0}
 
     while method._n_iterations_left > 1:
@@ -484,3 +348,5 @@ if __name__ == "__main__":
     print(method._n_iterations_left)
     print(method._distance)
     print(req.content["solution"])
+    
+    """
