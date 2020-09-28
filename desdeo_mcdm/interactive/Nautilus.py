@@ -2,6 +2,9 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from desdeo_tools.interaction.request import BaseRequest
+from desdeo_tools.scalarization import ReferencePointASF, Scalarizer
+from desdeo_tools.solver import ScalarSolver
+
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
 
@@ -171,10 +174,12 @@ class NautilusStopRequest(BaseRequest):
 
 
 class Nautilus(InteractiveMethod):
+
     def __init__(
             self,
             ideal: np.ndarray,
             nadir: np.ndarray,
+            epsilon: float = 0.0,
             objective_names: Optional[List[str]] = None,
             minimize: Optional[List[int]] = None,
     ):
@@ -185,6 +190,7 @@ class Nautilus(InteractiveMethod):
             being represented by the Pareto front.
             nadir (np.ndarray): The nadir objective vector of the problem
             being represented by the Pareto front.
+            epsilon (float): A small number used in calculating the utopian point.
             objective_names (Optional[List[str]], optional): Names of the
             objectives. List must match the number of columns in
             pareto_front. Defaults to 'f1', 'f2', 'f3', ...
@@ -218,10 +224,13 @@ class Nautilus(InteractiveMethod):
             self._minimize = [1 for _ in range(ideal.shape[0])]
 
         # Used to calculate the utopian point from the ideal point
-        self.__epsilon: float = 0.0
+        self._epsilon = epsilon
 
         self._ideal = ideal
         self._nadir = nadir
+
+        # calculate utopian vector
+        self._utopian = [ideal_i - self._epsilon for ideal_i in self._ideal]
 
         # bounds of the reachable region
         self._reachable_ub = self._nadir
@@ -230,20 +239,27 @@ class Nautilus(InteractiveMethod):
         # current iteration step number
         self._step_number = 1
 
+        # iteration points
+        self._zs: List[np.ndarray] = []
+
+        # The current reference point
+        self._q: np.ndarray = None
+
         self._distance = None
 
         # preference information
         self._preference_method = None
         self._preference_info = None
+        self._preference_factors = None
 
         self._n_iterations = None
         self._n_iterations_left = None
 
         # flags for the iteration phase
-        self.__use_previous_preference: bool = False
-        self.__step_back: bool = False
-        self.__short_step: bool = False
-        self.__first_iteration: bool = True
+        self._use_previous_preference: bool = False
+        self._step_back: bool = False
+        self._short_step: bool = False
+        self._first_iteration: bool = True
 
     def start(self) -> NautilusInitialRequest:
         return NautilusInitialRequest.init_with_method(self)
@@ -266,11 +282,29 @@ class Nautilus(InteractiveMethod):
         """Handles the initial request by parsing the response appropiately.
 
         """
-        self._n_iterations = request.response["n_iterations"]
-        self._n_iterations_left = self._n_iterations
 
-        self._preference_method = request.response["preference_method"]
-        self._preference_info = request.response["preference_info"]
+        # set interation number info and first iteration point (nadir point)
+        self._n_iterations: int = request.response["n_iterations"]
+        self._n_iterations_left: int = self._n_iterations
+        self._zs.append(self._nadir)
+
+        # set preference information
+        self._preference_method: int = request.response["preference_method"]
+        self._preference_info: np.ndarray = request.response["preference_info"]
+        self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
+                                                                     self._nadir, self._utopian)
+
+        # set reference point
+        self._q = self._zs[self._step_number-1]
+
+        # solve problem using achievement scalarizing function method
+        asf = ReferencePointASF(self._preference_factors, self._nadir, self._utopian)
+        #asf_scalarizer = Scalarizer()
+
+
+
+
+
 
         # TODO: continue here, solve problem, calculate first iteration point
 
@@ -309,11 +343,33 @@ class Nautilus(InteractiveMethod):
             self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances, self._minimize
         )
 
+    def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray, utopian: np.ndarray) -> np.ndarray:
+        """
+        Calculate preference factors based on decision maker's preference information.
+        """
+        if pref_method == 1:  # ranks
+            return [1/(r_i*(n_i-u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)]
+        elif pref_method == 2:  # percentages
+            delta_q = pref_info/100
+            return [1/(d_i*(n_i-u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)]
+
+
+
 
 if __name__ == "__main__":
-    # front = np.array([[1, 2, 3], [2, 3, 4], [2, 2, 3], [3, 2, 1]], dtype=float)
-    # ideal = np.zeros(3)
-    # nadir = np.ones(3) * 5
+    def volume(r, h):
+        return np.pi * r ** 2 * h
+
+
+    def area(r, h):
+        return 2 * np.pi ** 2 + np.pi * r * h
+
+
+    def objective(xs):
+        # xs is a 2d array like, which has different values for r and h on its first and second columns respectively.
+        xs = np.atleast_2d(xs)
+        return np.stack((volume(xs[:, 0], xs[:, 1]), -area(xs[:, 0], xs[:, 1]))).T
+
     f1 = np.linspace(1, 100, 50)
     f2 = f1[::-1] ** 2
 
