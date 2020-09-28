@@ -1,9 +1,15 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+
+from desdeo_problem.Variable import variable_builder
+from desdeo_problem.Objective import VectorObjective, _ScalarObjective
+from desdeo_problem.Constraint import ScalarConstraint
+from desdeo_problem.Problem import MOProblem
 from desdeo_tools.interaction.request import BaseRequest
-from desdeo_tools.scalarization import ReferencePointASF, Scalarizer
-from desdeo_tools.solver import ScalarSolver
+from desdeo_tools.scalarization import ReferencePointASF
+from desdeo_tools.scalarization.Scalarizer import Scalarizer
+from desdeo_tools.solver.ScalarSolver import ScalarMinimizer
 
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
@@ -174,16 +180,8 @@ class NautilusStopRequest(BaseRequest):
 
 
 class Nautilus(InteractiveMethod):
-
-    def __init__(
-            self,
-            ideal: np.ndarray,
-            nadir: np.ndarray,
-            epsilon: float = 0.0,
-            objective_names: Optional[List[str]] = None,
-            minimize: Optional[List[int]] = None,
-    ):
-        """
+    """
+    Implements the basic NAUTILUS methods as presented in `Miettinen 2010`
 
         Args:
             ideal (np.ndarray): The ideal objective vector of the problem
@@ -202,7 +200,19 @@ class Nautilus(InteractiveMethod):
             NautilusException: One or more dimension mismatches are
             encountered among the supplies arguments.
         """
-        # NOTE: no pareto front as input(?) - pareto optimal points are calculated at every iteration- not beforehand
+
+    def __init__(
+            self,
+            problem: MOProblem,
+            ideal: np.ndarray,
+            nadir: np.ndarray,
+            epsilon: float = 0.0,
+            objective_names: Optional[List[str]] = None,
+            minimize: Optional[List[int]] = None,
+            ):
+
+        super().__init__(problem)
+        self._problem = problem
 
         if not ideal.shape == nadir.shape:
             raise NautilusException("The dimensions of the ideal and nadir point do not match.")
@@ -255,6 +265,8 @@ class Nautilus(InteractiveMethod):
         self._n_iterations = None
         self._n_iterations_left = None
 
+        #self._scalar_solver = ScalarSolver()
+
         # flags for the iteration phase
         self._use_previous_preference: bool = False
         self._step_back: bool = False
@@ -299,14 +311,8 @@ class Nautilus(InteractiveMethod):
 
         # solve problem using achievement scalarizing function method
         asf = ReferencePointASF(self._preference_factors, self._nadir, self._utopian)
-        #asf_scalarizer = Scalarizer()
-
-
-
-
-
-
-        # TODO: continue here, solve problem, calculate first iteration point
+        asf_scalarizer = Scalarizer(self._problem.objectives, asf, scalarizer_args={"reference_point": self._q})
+        # TODO: continue on solving the asf problem, how to include bounds?
 
         return NautilusRequest(
             self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
@@ -354,30 +360,56 @@ class Nautilus(InteractiveMethod):
             return [1/(d_i*(n_i-u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)]
 
 
-
-
+# testing the method
 if __name__ == "__main__":
-    def volume(r, h):
-        return np.pi * r ** 2 * h
-
-
-    def area(r, h):
-        return 2 * np.pi ** 2 + np.pi * r * h
-
-
-    def objective(xs):
-        # xs is a 2d array like, which has different values for r and h on its first and second columns respectively.
-        xs = np.atleast_2d(xs)
-        return np.stack((volume(xs[:, 0], xs[:, 1]), -area(xs[:, 0], xs[:, 1]))).T
 
     f1 = np.linspace(1, 100, 50)
     f2 = f1[::-1] ** 2
 
     front = np.stack((f1, f2)).T
-    ideal = np.min(front, axis=0)
-    nadir = np.max(front, axis=0)
+    #ideal = np.min(front, axis=0)
+    #nadir = np.max(front, axis=0)
 
-    method = Nautilus(ideal, nadir)
+
+    # variables
+    var_names = ["a", "b", "c"]  # Make sure that the variable names are meaningful to you.
+
+    initial_values = [1, 1, 1]
+    lower_bounds = [-2, -1, 0]
+    upper_bounds = [5, 10, 3]
+
+    variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
+
+    # objectives
+    def obj1_2(x):  # This is a "simulator" that returns more than one objective at a time. Hence, use VectorObjective
+        y1 = x[:, 0] + x[:, 1] + x[:, 2]
+        y2 = x[:, 0] * x[:, 1] * x[:, 2]
+        return (y1, y2)
+
+
+    def obj3(x):  # This is a "simulator" that returns only one objective at a time. Hence, use ScalarObjective
+        y3 = x[:, 0] * x[:, 1] + x[:, 2]
+        return y3
+
+
+    f1_2 = VectorObjective(["y1", "y2"], obj1_2)
+    f3 = _ScalarObjective("y3", obj3, maximize=True)  # Note: f3 = VectorObjective(["y3"], obj3) will also work.
+
+    # constraints
+
+    const_func = lambda x, y: 10 - (x[:, 0] + x[:, 1] + x[:, 2])
+
+    # Args: name, number of variables, number of objectives, callable
+
+    cons1 = ScalarConstraint("c_1", 3, 3, const_func)
+
+    # problem
+    prob = MOProblem(objectives=[f1_2, f3], variables=variables, constraints=[cons1])
+
+    ideal = np.array([0, 0, 0])
+    nadir = np.array([6,6,6])
+
+    method = Nautilus(prob, ideal, nadir)
 
     req = method.start()
 
@@ -386,7 +418,7 @@ if __name__ == "__main__":
     req.response = {
         "n_iterations": n_iterations,
         "preference_method": 1,
-        "preference_info": [1, 2],
+        "preference_info": [1, 2, 3],
     }
 
     req = method.iterate(req)
