@@ -9,7 +9,7 @@ from desdeo_problem.Problem import MOProblem
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_tools.solver.ScalarSolver import ScalarMinimizer
+from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
@@ -209,10 +209,6 @@ class Nautilus(InteractiveMethod):
             minimize: Optional[List[int]] = None,
     ):
 
-        super().__init__(problem)
-        self._problem = problem
-        self._variable_bounds = problem.get_variable_bounds()
-
         if not ideal.shape == nadir.shape:
             raise NautilusException("The dimensions of the ideal and nadir point do not match.")
 
@@ -232,9 +228,14 @@ class Nautilus(InteractiveMethod):
         else:
             self._minimize = [1 for _ in range(ideal.shape[0])]
 
+        # initialize problem
+        super().__init__(problem)
+        self._problem = problem
+        self._objectives: np.ndarray = lambda x: self._problem.evaluate(x).objectives  # objective function values
+        self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
+
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
-
         self._ideal = ideal
         self._nadir = nadir
 
@@ -251,6 +252,11 @@ class Nautilus(InteractiveMethod):
         # iteration points
         self._zs: List[np.ndarray] = []
 
+        # solutions, objectives, and distances for each iteration
+        self._xs: List[np.ndarray] = []
+        self._fs: List[np.ndarray] = []
+        self._ds: List[np.ndarray] = []
+
         # The current reference point
         self._q: np.ndarray = None
 
@@ -261,10 +267,9 @@ class Nautilus(InteractiveMethod):
         self._preference_info = None
         self._preference_factors = None
 
+        # number of total iterations and iterations left
         self._n_iterations = None
         self._n_iterations_left = None
-
-        # self._scalar_solver = ScalarSolver()
 
         # flags for the iteration phase
         self._use_previous_preference: bool = False
@@ -297,7 +302,14 @@ class Nautilus(InteractiveMethod):
         # set iteration number info and first iteration point (nadir point)
         self._n_iterations: int = request.response["n_iterations"]
         self._n_iterations_left: int = self._n_iterations
-        self._zs.append(self._nadir)
+
+        # set up arrays for storing information from obtained solutions, function values, and distances
+        self._xs = [None] * (self._n_iterations+1)
+        self._fs = [None] * (self._n_iterations+1)
+        self._ds = [None] * (self._n_iterations+1)
+        self._zs = [None] * (self._n_iterations+1)
+
+        self._zs[self._step_number - 1] = self._nadir
 
         # set preference information
         self._preference_method: int = request.response["preference_method"]
@@ -305,19 +317,21 @@ class Nautilus(InteractiveMethod):
         self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
                                                                      self._nadir, self._utopian)
 
-        # set reference point
+        # set reference point, initial values for decision variables and solve the problem
         self._q = self._zs[self._step_number - 1]
+        x0 = self._problem.get_variable_upper_bounds() / 2
+        result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
+                                self._variable_bounds, method=None)  # include preference info on method?
 
-        # solve problem using achievement scalarizing function method
-        asf = ReferencePointASF(self._preference_factors, self._nadir, self._utopian)
+        # update current solution and objective function values
+        self._xs[self._step_number - 1] = result["x"]
+        self._fs[self._step_number - 1] = result["fun"]
 
-        # problem.evaluate -> objective functions
-        asf_scalarizer = Scalarizer(self._problem.evaluate, asf, scalarizer_args={"reference_point": self._q})
-
-        minimizer = ScalarMinimizer(asf_scalarizer, self._variable_bounds, method=None)
-        x0 = np.array([2.5, 11])  # initial guess
-        res = minimizer.minimize(x0)
-        # TODO: continue on solving the asf problem
+        # calculate next iteration point
+        self._zs[self._step_number] = self.calculate_iteration_point(self._step_number + 1,
+                                                                         self._zs[self._step_number - 1],
+                                                                         self._fs[self._step_number - 1])
+        # TODO: Continue from here, double check the use of indeces in step numbers!
 
         return NautilusRequest(
             self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
@@ -333,6 +347,63 @@ class Nautilus(InteractiveMethod):
         elif pref_method == 2:  # percentages
             delta_q = pref_info / 100
             return [1 / (d_i * (n_i - u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)]
+
+    def solve_asf(self,
+                  ref_point: np.ndarray,
+                  x0: np.ndarray,
+                  preference_factors: np.ndarray,
+                  nadir: np.ndarray,
+                  utopian: np.ndarray,
+                  objectives: np.ndarray,
+                  variable_bounds: Optional[np.ndarray],
+                  method: Union[ScalarMethod, str, None]
+                  ) -> dict:
+        """
+        Solve Achievement scalarizing function.
+
+        Args:
+            ref_point (np.ndarray): Reference point.
+            x0 (np.ndarray): Initial values for decison variables.
+            preference_factors (np.ndarray): Preference factors on how much would the decision maker wish to improve
+                                             the values of each objective function.
+            nadir (np.ndarray): Nadir vector.
+            utopian (np.ndarray): Utopian vector.
+            objectives (np.ndarray): The objective function values for each input vector.
+            variable_bounds (Optional[np.ndarray): Lower and upper bounds of each variable
+                                                   as a 2D numpy array. If undefined variables, None instead.
+            method (Union[ScalarMethod, str, None): The optimization method the scalarizer should be minimized with
+
+        Returns: Dict: A dictionary with at least the following entries: 'x' indicating the optimal
+                 variables found, 'fun' the optimal value of the optimized functoin, and 'success' a boolean
+                 indicating whether the optimizaton was conducted successfully.
+
+        """
+
+        # scalarize problem using reference point
+        asf = ReferencePointASF(preference_factors, nadir, utopian)
+        asf_scalarizer = Scalarizer(
+            objectives,
+            asf,
+            scalarizer_args={"reference_point": ref_point})
+
+        # minimize
+        minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
+        return minimizer.minimize(x0)
+
+    def calculate_iteration_point(self, step_number: int, z_previous: np.ndarray, f_current: np.ndarray):
+        """
+
+        Args:
+            step_number (int): Current step number.
+            z_previous (np.ndarray): Previous iteration point.
+            f_current (np.ndarray): Current optimal objective vector.
+
+        Returns:
+            z_next (np.ndarray): Next iteration point.
+
+        """
+
+        return ((step_number - 1) / step_number) * z_previous + ((1 / step_number) * f_current)
 
 
 # testing the method
@@ -369,7 +440,7 @@ if __name__ == "__main__":
 
 
     # constraints
-    def con_golden(xs):
+    def con_golden(xs, _):
         # constraints are defined in DESDEO in a way were a positive value indicates an agreement with a constraint, and
         # a negative one a disagreement.
         xs = np.atleast_2d(xs)
