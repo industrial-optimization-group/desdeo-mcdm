@@ -108,7 +108,6 @@ class NautilusInitialRequest(BaseRequest):
 
         super().__init__("reference_point_preference", "required", content=content)
 
-
     @classmethod
     def init_with_method(cls, method):
         return cls(method._ideal, method._nadir)
@@ -157,7 +156,6 @@ class NautilusRequest(BaseRequest):
         }
 
         super().__init__("reference_point_preference", "required", content=content)
-
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
@@ -209,10 +207,11 @@ class Nautilus(InteractiveMethod):
             epsilon: float = 0.0,
             objective_names: Optional[List[str]] = None,
             minimize: Optional[List[int]] = None,
-            ):
+    ):
 
         super().__init__(problem)
         self._problem = problem
+        self._variable_bounds = problem.get_variable_bounds()
 
         if not ideal.shape == nadir.shape:
             raise NautilusException("The dimensions of the ideal and nadir point do not match.")
@@ -265,7 +264,7 @@ class Nautilus(InteractiveMethod):
         self._n_iterations = None
         self._n_iterations_left = None
 
-        #self._scalar_solver = ScalarSolver()
+        # self._scalar_solver = ScalarSolver()
 
         # flags for the iteration phase
         self._use_previous_preference: bool = False
@@ -295,7 +294,7 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        # set interation number info and first iteration point (nadir point)
+        # set iteration number info and first iteration point (nadir point)
         self._n_iterations: int = request.response["n_iterations"]
         self._n_iterations_left: int = self._n_iterations
         self._zs.append(self._nadir)
@@ -307,107 +306,82 @@ class Nautilus(InteractiveMethod):
                                                                      self._nadir, self._utopian)
 
         # set reference point
-        self._q = self._zs[self._step_number-1]
+        self._q = self._zs[self._step_number - 1]
 
         # solve problem using achievement scalarizing function method
         asf = ReferencePointASF(self._preference_factors, self._nadir, self._utopian)
-        asf_scalarizer = Scalarizer(self._problem.objectives, asf, scalarizer_args={"reference_point": self._q})
-        # TODO: continue on solving the asf problem, how to include bounds?
+
+        # problem.evaluate -> objective functions
+        asf_scalarizer = Scalarizer(self._problem.evaluate, asf, scalarizer_args={"reference_point": self._q})
+
+        minimizer = ScalarMinimizer(asf_scalarizer, self._variable_bounds, method=None)
+        x0 = np.array([2.5, 11])  # initial guess
+        res = minimizer.minimize(x0)
+        # TODO: continue on solving the asf problem
 
         return NautilusRequest(
             self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
         )
 
-    def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
-        """Handles the intermediate requests.
-
-        """
-
-        if self._n_iterations_left <= 1:
-            self._n_iterations_left = 0
-            return NautilusStopRequest(self._preferred_point)
-
-        self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
-        self._reachable_ub = request.content["upper_bounds"][preferred_point_index]
-        self._distance = request.content["distances"][preferred_point_index]
-
-        self._reachable_idx = self.calculate_reachable_point_indices(
-            self._pareto_front, self._reachable_lb, self._reachable_ub
-        )
-
-        # increment and decrement iterations
-        self._n_iterations_left -= 1
-        self._step_number += 1
-
-        # Start again
-        zbars = self.calculate_representative_points(self._pareto_front, self._reachable_idx, self._n_points)
-        zs = self.calculate_intermediate_points(self._preferred_point, zbars, self._n_iterations_left)
-        new_lower_bounds, new_upper_bounds = self.calculate_bounds(self._pareto_front, zs)
-        distances = self.calculate_distances(zs, zbars, self._nadir)
-
-        return NautilusRequest(
-            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances, self._minimize
-        )
-
-    def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray, utopian: np.ndarray) -> np.ndarray:
+    def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
+                                     utopian: np.ndarray) -> np.ndarray:
         """
         Calculate preference factors based on decision maker's preference information.
         """
         if pref_method == 1:  # ranks
-            return [1/(r_i*(n_i-u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)]
+            return [1 / (r_i * (n_i - u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)]
         elif pref_method == 2:  # percentages
-            delta_q = pref_info/100
-            return [1/(d_i*(n_i-u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)]
+            delta_q = pref_info / 100
+            return [1 / (d_i * (n_i - u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)]
 
 
 # testing the method
 if __name__ == "__main__":
-
-    f1 = np.linspace(1, 100, 50)
-    f2 = f1[::-1] ** 2
-
-    front = np.stack((f1, f2)).T
-    #ideal = np.min(front, axis=0)
-    #nadir = np.max(front, axis=0)
-
-
     # variables
-    var_names = ["a", "b", "c"]  # Make sure that the variable names are meaningful to you.
+    var_names = ["r", "h"]  # Make sure that the variable names are meaningful to you.
 
-    initial_values = [1, 1, 1]
-    lower_bounds = [-2, -1, 0]
-    upper_bounds = [5, 10, 3]
+    initial_values = [2.5, 11]
+    lower_bounds = [2.5, 10]
+    upper_bounds = [15, 50]
 
     variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
 
+
     # objectives
-    def obj1_2(x):  # This is a "simulator" that returns more than one objective at a time. Hence, use VectorObjective
-        y1 = x[:, 0] + x[:, 1] + x[:, 2]
-        y2 = x[:, 0] * x[:, 1] * x[:, 2]
-        return (y1, y2)
+
+    def volume(r, h):
+        return np.pi * r ** 2 * h
 
 
-    def obj3(x):  # This is a "simulator" that returns only one objective at a time. Hence, use ScalarObjective
-        y3 = x[:, 0] * x[:, 1] + x[:, 2]
-        return y3
+    def area(r, h):
+        return 2 * np.pi ** 2 + np.pi * r * h
 
 
-    f1_2 = VectorObjective(["y1", "y2"], obj1_2)
-    f3 = _ScalarObjective("y3", obj3, maximize=True)  # Note: f3 = VectorObjective(["y3"], obj3) will also work.
+    def objective(xs):
+        # xs is a 2d array like, which has different values for r and h on its first and second columns respectively.
+        xs = np.atleast_2d(xs)
+        return np.stack((volume(xs[:, 0], xs[:, 1]), -area(xs[:, 0], xs[:, 1]))).T
+
+
+    f1 = _ScalarObjective("y1", volume, maximize=True)
+    f2 = _ScalarObjective("y2", area)
+    f1_2 = VectorObjective("y3", objective)
+
 
     # constraints
+    def con_golden(xs):
+        # constraints are defined in DESDEO in a way were a positive value indicates an agreement with a constraint, and
+        # a negative one a disagreement.
+        xs = np.atleast_2d(xs)
+        return -(xs[:, 0] / xs[:, 1] - 1.618)
 
-    const_func = lambda x, y: 10 - (x[:, 0] + x[:, 1] + x[:, 2])
 
-    # Args: name, number of variables, number of objectives, callable
-
-    cons1 = ScalarConstraint("c_1", 3, 3, const_func)
+    cons1 = ScalarConstraint(name="c_1", n_objective_funs=2, n_decision_vars=2, evaluator=con_golden)
 
     # problem
-    prob = MOProblem(objectives=[f1_2, f3], variables=variables, constraints=[cons1])
-
-    ideal = np.array([0, 0, 0])
-    nadir = np.array([6,6,6])
+    prob = MOProblem(objectives=[f1_2], variables=variables, constraints=[cons1])
+    ideal = np.array([25000, 5])
+    nadir = np.array([150, 200])
 
     method = Nautilus(prob, ideal, nadir)
 
@@ -418,10 +392,11 @@ if __name__ == "__main__":
     req.response = {
         "n_iterations": n_iterations,
         "preference_method": 1,
-        "preference_info": [1, 2, 3],
+        "preference_info": [1, 2],
     }
 
     req = method.iterate(req)
+
     """
     req.response = {"preferred_point_index": 0}
 
