@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Callable
 
 import numpy as np
 
@@ -15,6 +15,82 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
+
+"""
+Epsilon constraint method
+"""
+
+
+class ECMError(Exception):
+    """Raised when an error related to the Epsilon Constraint Method is encountered.
+    """
+
+
+class EpsilonConstraintMethod:
+    """A class to represent a class for scalarizing MOO problems using the epsilon
+        constraint method.
+    Attributes:
+        objectives (Callable): Objective functions.
+        to_be_minimized (int): Integer representing which objective function
+        should be minimized.
+        epsilons (np.ndarray): Upper bounds chosen by the decison maker.
+                               Epsilon constraint functions are defined in a following form:
+                                    f_i(x) <= eps_i
+                               If the constraint function is of form
+                                    f_i(x) >= eps_i
+                               Remember to multiply the epsilon value with -1!
+        constraints (Optional[Callable]): Function that returns definitions of other constraints, if existing.
+    """
+
+    def __init__(
+            self, objectives: Callable, to_be_minimized: int, epsilons: np.ndarray,
+            constraints: Optional[Callable]
+    ):
+        self.objectives = objectives
+        self._to_be_minimized = to_be_minimized
+        self.epsilons = epsilons
+        self.constraints = constraints
+
+    def evaluate_constraints(self, xs) -> np.ndarray:
+        """
+        Returns values of constraints with given decison variables.
+        Args:
+            xs (np.ndarray): Decision variables.
+        Returns: Values of constraint functions (both "original" constraints as well as epsilon constraints) in a vector.
+        """
+        xs = np.atleast_2d(xs)
+
+        # evaluate epsilon constraint function "left-side" values with given decision variables
+        epsilon_left_side = np.array(
+            [self.objectives(xs)[0][i] for i, _ in enumerate(self.objectives(xs)[0]) if i != self._to_be_minimized])
+
+        if len(epsilon_left_side) != len(self.epsilons):
+            msg = ("The lenght of the epsilons array ({}) must match the total number of objectives - 1 ({})."
+                   ).format(len(self.epsilons), len(self.objectives(xs)[0]) - 1)
+            raise ECMError(msg)
+
+        # evaluate values of epsilon constraint functions
+        e: np.ndarray = np.array([-(f - v) for f, v in zip(epsilon_left_side, self.epsilons)])
+
+        if self.constraints:
+            c = self.constraints(xs)
+            return np.concatenate([c, e])
+        else:
+            return e
+
+    def __call__(self, objective_vector: np.ndarray) -> float:
+        """
+        Returns the value of objective function to be minimized.
+        Args:
+            objective_vector (np.ndarray): Values of objective functions.
+        Returns: Value of objective function to be minimized.
+        """
+        return objective_vector[0][self._to_be_minimized]
+
+
+"""
+NAUTILUS
+"""
 
 
 def validate_response(n_objectives, response: Dict) -> None:
@@ -304,11 +380,12 @@ class Nautilus(InteractiveMethod):
         self._n_iterations_left: int = self._n_iterations
 
         # set up arrays for storing information from obtained solutions, function values, and distances
-        self._xs = [None] * (self._n_iterations+1)
-        self._fs = [None] * (self._n_iterations+1)
-        self._ds = [None] * (self._n_iterations+1)
-        self._zs = [None] * (self._n_iterations+1)
+        self._xs = [None] * (self._n_iterations + 1)
+        self._fs = [None] * (self._n_iterations + 1)
+        self._ds = [None] * (self._n_iterations + 1)
+        self._zs = [None] * (self._n_iterations + 1)
 
+        # set initial iteration point
         self._zs[self._step_number - 1] = self._nadir
 
         # set preference information
@@ -328,9 +405,15 @@ class Nautilus(InteractiveMethod):
         self._fs[self._step_number - 1] = result["fun"]
 
         # calculate next iteration point
-        self._zs[self._step_number] = self.calculate_iteration_point(self._step_number + 1,
-                                                                         self._zs[self._step_number - 1],
-                                                                         self._fs[self._step_number - 1])
+        self._zs[self._step_number] = self.calculate_iteration_point(self._step_number,
+                                                                     self._zs[self._step_number - 1],
+                                                                     self._fs[self._step_number - 1])
+        print(self._zs)
+
+        # calculate new bounds
+        boun = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
+                                     self._zs[self._step_number-1], self._variable_bounds,
+                                     self._problem.constraints, None)
         # TODO: Continue from here, double check the use of indeces in step numbers!
 
         return NautilusRequest(
@@ -390,12 +473,12 @@ class Nautilus(InteractiveMethod):
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
 
-    def calculate_iteration_point(self, step_number: int, z_previous: np.ndarray, f_current: np.ndarray):
+    def calculate_iteration_point(self, step_number: int, z_current: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
 
         Args:
             step_number (int): Current step number.
-            z_previous (np.ndarray): Previous iteration point.
+            z_previous (np.ndarray): Current iteration point.
             f_current (np.ndarray): Current optimal objective vector.
 
         Returns:
@@ -403,7 +486,31 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        return ((step_number - 1) / step_number) * z_previous + ((1 / step_number) * f_current)
+        return ((step_number - 1) / step_number) * z_current + ((1 / step_number) * f_current)
+
+    def calculate_bounds(self, objectives: np.ndarray, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
+                         bounds: Union[np.ndarray, None], constraints: Callable, method: Union[ScalarMethod, str, None]):
+        """
+        Calculate the new bounds using Epsilon constraint method.
+        Args:
+            objectives (np.ndarray): The objective function values for each input vector.
+            n_objectives (int): Total number of objectives.
+            x0 (np.ndarray): Initial values for decison variables.
+            epsilons (np.ndarray): Previous iteration point.
+            constraints (Callable): Constaints of the problem.
+            method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
+
+        Returns:
+
+        """
+        # TODO: Continue from here, take out from epsilons the z_h value to be minimized every turn
+        for i in range(n_objectives):
+            eps = EpsilonConstraintMethod(objectives, i, epsilons, constraints=constraints)
+            cons_evaluate = eps.evaluate_constraints
+            scalarized_objective = Scalarizer(objectives, eps)
+            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=None)
+            res = minimizer.minimize(x0)
+
 
 
 # testing the method
