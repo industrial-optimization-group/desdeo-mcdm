@@ -382,11 +382,13 @@ class Nautilus(InteractiveMethod):
         self._n_iterations: int = request.response["n_iterations"]
         self._n_iterations_left: int = self._n_iterations
 
-        # set up arrays for storing information from obtained solutions, function values, and distances
+        # set up arrays for storing information from obtained solutions, function values, distances, and bounds
         self._xs = [None] * (self._n_iterations + 1)
         self._fs = [None] * (self._n_iterations + 1)
         self._ds = [None] * (self._n_iterations + 1)
         self._zs = [None] * (self._n_iterations + 1)
+        self._lower_bounds = [None] * (self._n_iterations + 1)
+        self._upper_bounds = [None] * (self._n_iterations + 1)
 
         # set initial iteration point
         self._zs[self._step_number - 1] = self._nadir
@@ -409,17 +411,16 @@ class Nautilus(InteractiveMethod):
         self._fs[self._step_number - 1] = result["fun"]
 
         # calculate next iteration point
-        self._zs[self._step_number] = self.calculate_iteration_point(self._step_number,
+        self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                      self._zs[self._step_number - 1],
                                                                      self._fs[self._step_number - 1])
-        print(self._zs)
-        print(self._variable_bounds)
-
         # calculate new bounds
-        boun = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
+        new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
                                      self._zs[self._step_number - 1], self._variable_bounds,
                                      self._constraint[0], None)
-        # TODO: Continue from here, double check the use of indeces in step numbers!
+
+        self._lower_bounds[self._step_number] = new_lower_bounds
+        self._upper_bounds[self._step_number] = self._zs[self._step_number]
 
         return NautilusRequest(
             self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
@@ -478,11 +479,11 @@ class Nautilus(InteractiveMethod):
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
 
-    def calculate_iteration_point(self, step_number: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
+    def calculate_iteration_point(self, itn: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
 
         Args:
-            step_number (int): Current step number.
+            itn (int): Number of iterations left.
             z_prev(np.ndarray): Previous iteration point.
             f_current (np.ndarray): Current optimal objective vector.
 
@@ -491,9 +492,9 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        return ((step_number - 1) / step_number) * z_prev + ((1 / step_number) * f_current)
+        return ((itn - 1) / itn) * z_prev + ((1 / itn) * f_current)
 
-    def calculate_bounds(self, objectives: np.ndarray, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
+    def calculate_bounds(self, objectives: Callable, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
                          bounds: Union[np.ndarray, None], constraints: Callable,
                          method: Union[ScalarMethod, str, None]):
         """
@@ -503,13 +504,16 @@ class Nautilus(InteractiveMethod):
             n_objectives (int): Total number of objectives.
             x0 (np.ndarray): Initial values for decison variables.
             epsilons (np.ndarray): Previous iteration point.
-            constraints (Callable): Constaints of the problem.
+            bounds (Union[np.ndarray, None): Bounds for decision variables.
+            constraints (Callable): Constraints of the problem.
             method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
 
         """
-        # solve new bounds for each objective
+        new_lower_bounds: np.ndarray = [None] * n_objectives
+
+        # solve new lower bounds for each objective
         for i in range(n_objectives):
             eps = EpsilonConstraintMethod(objectives,
                                           i,
@@ -520,9 +524,11 @@ class Nautilus(InteractiveMethod):
             scalarized_objective = Scalarizer(objectives, eps)
             minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=None)
             res = minimizer.minimize(x0)
-            print(res["x"])
 
-        return
+            # store objective function values as new lower bounds
+            new_lower_bounds[i] = objectives(res["x"])[0][i]
+
+        return new_lower_bounds
 
 
 # testing the method
