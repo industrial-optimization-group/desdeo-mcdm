@@ -206,14 +206,12 @@ class NautilusRequest(BaseRequest):
             n_iterations: int,
             lower_bounds: np.ndarray,
             upper_bounds: np.ndarray,
-            distances: np.ndarray,
-            minimize: List[int],
+            distance: np.ndarray,
     ):
         self.n_objectives = len(ideal)
         msg = (
             "In case you wish to change the number of remaining iterations lower, please specify the number as "
             "'n_iterations'.\n "
-            # how dm communicates this in ui? 
             "In case you wish to take a step back to the previous iteration point, please state 'True' here.\n"
             "Please specify as 'preference_method' whether to \n"
             "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
@@ -225,10 +223,10 @@ class NautilusRequest(BaseRequest):
             "message": msg,
             "ideal": ideal,
             "nadir": nadir,
+            "n_iterations": n_iterations,
             "lower_bounds": lower_bounds,
             "upper_bounds": upper_bounds,
-            "distances": distances,
-            "minimize": minimize,
+            "distance": distance,
         }
 
         super().__init__("reference_point_preference", "required", content=content)
@@ -402,32 +400,34 @@ class Nautilus(InteractiveMethod):
         # set reference point, initial values for decision variables and solve the problem
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
-        print(x0)
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=None)  # include preference info on method?
 
         # update current solution and objective function values
-        self._xs[self._step_number - 1] = result["x"]
-        self._fs[self._step_number - 1] = result["fun"]
+        self._xs[self._step_number] = result["x"]
+        self._fs[self._step_number] = result["fun"]
 
         # calculate next iteration point
         self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                      self._zs[self._step_number - 1],
-                                                                     self._fs[self._step_number - 1])
+                                                                     self._fs[self._step_number])
         # calculate new bounds and store the information
         new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
                                                  self._zs[self._step_number - 1], self._variable_bounds,
-                                                 self._constraint[0], None)
+                                                 self._constraint[0], None)  # how to include multiple constraints?
 
-        self._lower_bounds[self._step_number] = new_lower_bounds
-        self._upper_bounds[self._step_number] = self._zs[self._step_number]
+        self._lower_bounds[self._step_number + 1] = new_lower_bounds
+        self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
 
         # calculate distance from current iteration point to Pareto optimal set
-        d = self.calculate_distance(self._zs[self._step_number], self._nadir, self._fs[self._step_number - 1])
-        self._ds[self._step_number - 1] = d
+        self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
+                                                              self._nadir,
+                                                              self._fs[self._step_number])
 
+        # return the information from iteration round to be shown to the DM.
         return NautilusRequest(
-            self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
+            self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+            self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
         )
 
     def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
@@ -600,39 +600,6 @@ if __name__ == "__main__":
 
     # ideal and nadir
 
-    """
-    def simple_sum(xs):
-        xs = np.atleast_2d(xs)
-        return np.sum(xs, axis=1)
-
-    # define a new scalarizing function so that each of the objectives can be optimized independently
-    def weighted_sum(xs, ws):
-        # ws stand for weights
-        return np.sum(ws * xs, axis=1)
-
-
-    scalarized_objective = Scalarizer(objective, simple_sum)
-    minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=con_golden, method=None)
-
-    # minimize the first objective
-    x0 = np.array([2.6, 11])
-    weighted_scalarized_objective = Scalarizer(objective, weighted_sum, scalarizer_args={"ws": np.array([1, 0])})
-    minimizer._scalarizer = weighted_scalarized_objective
-    res = minimizer.minimize(x0)
-    first_obj_vals = objective(res["x"])
-
-    # minimize the second objective
-    weighted_scalarized_objective._scalarizer_args = {"ws": np.array([0, 1])}
-    res = minimizer.minimize(x0)
-    second_obj_vals = objective(res["x"])
-
-    # payoff table
-    po_table = np.stack((first_obj_vals, second_obj_vals)).squeeze()
-
-    ideal = np.diagonal(po_table)
-    nadir = np.max(po_table, axis=0)
-    """
-
     ideal = np.array([196.34971768, -2375.93349431])
     nadir = np.array([35342.91192077, -98.27906444])
 
@@ -649,10 +616,8 @@ if __name__ == "__main__":
     }
 
     req = method.iterate(req)
-
+    # req = method.iterate(req)
     """
-    req.response = {"preferred_point_index": 0}
-
     while method._n_iterations_left > 1:
         print(method._n_iterations_left)
         req = method.iterate(req)
