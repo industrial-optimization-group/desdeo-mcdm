@@ -414,13 +414,17 @@ class Nautilus(InteractiveMethod):
         self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                      self._zs[self._step_number - 1],
                                                                      self._fs[self._step_number - 1])
-        # calculate new bounds
+        # calculate new bounds and store the information
         new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
-                                     self._zs[self._step_number - 1], self._variable_bounds,
-                                     self._constraint[0], None)
+                                                 self._zs[self._step_number - 1], self._variable_bounds,
+                                                 self._constraint[0], None)
 
         self._lower_bounds[self._step_number] = new_lower_bounds
         self._upper_bounds[self._step_number] = self._zs[self._step_number]
+
+        # calculate distance from current iteration point to Pareto optimal set
+        d = self.calculate_distance(self._zs[self._step_number], self._nadir, self._fs[self._step_number - 1])
+        self._ds[self._step_number - 1] = d
 
         return NautilusRequest(
             self._ideal, self._nadir, self._n_iterations, self._ideal, self._nadir, [], self._minimize
@@ -517,7 +521,7 @@ class Nautilus(InteractiveMethod):
         for i in range(n_objectives):
             eps = EpsilonConstraintMethod(objectives,
                                           i,
-                                          # take out the objective to be solved
+                                          # take out the objective to be minimized
                                           [val for ind, val in enumerate(epsilons) if ind != i],
                                           constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
@@ -529,6 +533,22 @@ class Nautilus(InteractiveMethod):
             new_lower_bounds[i] = objectives(res["x"])[0][i]
 
         return new_lower_bounds
+
+    def calculate_distance(self, z_current: np.ndarray, nadir: np.ndarray, f_current: np.ndarray) -> np.ndarray:
+        """
+        Calculates the distance from current iteration point to the Pareto optimal set.
+        Args:
+            z_current (np.ndarray): Current iteration point.
+            nadir (np.ndarray): Nadir vector.
+            f_current (np.ndarray): Current optimal objective vector.
+
+        Returns:
+            (np.ndarray): Distance to the Pareto optimal set.
+
+        """
+        dist = (np.linalg.norm(np.atleast_2d(z_current) - nadir, ord=2, axis=1)) \
+               / (np.linalg.norm(np.atleast_2d(f_current) - nadir, ord=2, axis=1))
+        return dist * 100
 
 
 # testing the method
@@ -580,7 +600,6 @@ if __name__ == "__main__":
 
     # ideal and nadir
 
-
     """
     def simple_sum(xs):
         xs = np.atleast_2d(xs)
@@ -615,7 +634,7 @@ if __name__ == "__main__":
     """
 
     ideal = np.array([196.34971768, -2375.93349431])
-    nadir = np.array([35342.91192077,   -98.27906444])
+    nadir = np.array([35342.91192077, -98.27906444])
 
     method = Nautilus(prob, ideal, nadir)
 
