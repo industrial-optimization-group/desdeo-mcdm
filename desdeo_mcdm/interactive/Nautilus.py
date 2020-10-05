@@ -73,7 +73,7 @@ class EpsilonConstraintMethod:
         e: np.ndarray = np.array([-(f - v) for f, v in zip(epsilon_left_side, self.epsilons)])
 
         if self.constraints:
-            c = self.constraints(xs)
+            c = self.constraints(xs, 0)
             return np.concatenate([c, e])
         else:
             return e
@@ -309,6 +309,7 @@ class Nautilus(InteractiveMethod):
         self._problem = problem
         self._objectives: np.ndarray = lambda x: self._problem.evaluate(x).objectives  # objective function values
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
+        self._constraint = [c.evaluator for c in self._problem.constraints]
 
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
@@ -321,6 +322,8 @@ class Nautilus(InteractiveMethod):
         # bounds of the reachable region
         self._reachable_ub = self._nadir
         self._reachable_lb = self._ideal
+        self._lower_bounds: List[np.ndarray] = []
+        self._upper_bounds: List[np.ndarray] = []
 
         # current iteration step number
         self._step_number = 1
@@ -397,6 +400,7 @@ class Nautilus(InteractiveMethod):
         # set reference point, initial values for decision variables and solve the problem
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
+        print(x0)
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=None)  # include preference info on method?
 
@@ -409,11 +413,12 @@ class Nautilus(InteractiveMethod):
                                                                      self._zs[self._step_number - 1],
                                                                      self._fs[self._step_number - 1])
         print(self._zs)
+        print(self._variable_bounds)
 
         # calculate new bounds
         boun = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
-                                     self._zs[self._step_number-1], self._variable_bounds,
-                                     self._problem.constraints, None)
+                                     self._zs[self._step_number - 1], self._variable_bounds,
+                                     self._constraint[0], None)
         # TODO: Continue from here, double check the use of indeces in step numbers!
 
         return NautilusRequest(
@@ -473,12 +478,12 @@ class Nautilus(InteractiveMethod):
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
 
-    def calculate_iteration_point(self, step_number: int, z_current: np.ndarray, f_current: np.ndarray) -> np.ndarray:
+    def calculate_iteration_point(self, step_number: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
 
         Args:
             step_number (int): Current step number.
-            z_previous (np.ndarray): Current iteration point.
+            z_prev(np.ndarray): Previous iteration point.
             f_current (np.ndarray): Current optimal objective vector.
 
         Returns:
@@ -486,10 +491,11 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        return ((step_number - 1) / step_number) * z_current + ((1 / step_number) * f_current)
+        return ((step_number - 1) / step_number) * z_prev + ((1 / step_number) * f_current)
 
     def calculate_bounds(self, objectives: np.ndarray, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
-                         bounds: Union[np.ndarray, None], constraints: Callable, method: Union[ScalarMethod, str, None]):
+                         bounds: Union[np.ndarray, None], constraints: Callable,
+                         method: Union[ScalarMethod, str, None]):
         """
         Calculate the new bounds using Epsilon constraint method.
         Args:
@@ -503,14 +509,20 @@ class Nautilus(InteractiveMethod):
         Returns:
 
         """
-        # TODO: Continue from here, take out from epsilons the z_h value to be minimized every turn
+        # solve new bounds for each objective
         for i in range(n_objectives):
-            eps = EpsilonConstraintMethod(objectives, i, epsilons, constraints=constraints)
+            eps = EpsilonConstraintMethod(objectives,
+                                          i,
+                                          # take out the objective to be solved
+                                          [val for ind, val in enumerate(epsilons) if ind != i],
+                                          constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
             minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=None)
             res = minimizer.minimize(x0)
+            print(res["x"])
 
+        return
 
 
 # testing the method
@@ -521,6 +533,7 @@ if __name__ == "__main__":
     initial_values = [2.5, 11]
     lower_bounds = [2.5, 10]
     upper_bounds = [15, 50]
+    bounds = np.stack((lower_bounds, upper_bounds))
 
     variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
 
@@ -558,8 +571,45 @@ if __name__ == "__main__":
 
     # problem
     prob = MOProblem(objectives=[f1_2], variables=variables, constraints=[cons1])
-    ideal = np.array([25000, 5])
-    nadir = np.array([150, 200])
+
+    # ideal and nadir
+
+
+    """
+    def simple_sum(xs):
+        xs = np.atleast_2d(xs)
+        return np.sum(xs, axis=1)
+
+    # define a new scalarizing function so that each of the objectives can be optimized independently
+    def weighted_sum(xs, ws):
+        # ws stand for weights
+        return np.sum(ws * xs, axis=1)
+
+
+    scalarized_objective = Scalarizer(objective, simple_sum)
+    minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=con_golden, method=None)
+
+    # minimize the first objective
+    x0 = np.array([2.6, 11])
+    weighted_scalarized_objective = Scalarizer(objective, weighted_sum, scalarizer_args={"ws": np.array([1, 0])})
+    minimizer._scalarizer = weighted_scalarized_objective
+    res = minimizer.minimize(x0)
+    first_obj_vals = objective(res["x"])
+
+    # minimize the second objective
+    weighted_scalarized_objective._scalarizer_args = {"ws": np.array([0, 1])}
+    res = minimizer.minimize(x0)
+    second_obj_vals = objective(res["x"])
+
+    # payoff table
+    po_table = np.stack((first_obj_vals, second_obj_vals)).squeeze()
+
+    ideal = np.diagonal(po_table)
+    nadir = np.max(po_table, axis=0)
+    """
+
+    ideal = np.array([196.34971768, -2375.93349431])
+    nadir = np.array([35342.91192077,   -98.27906444])
 
     method = Nautilus(prob, ideal, nadir)
 
