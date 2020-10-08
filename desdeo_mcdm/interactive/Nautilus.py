@@ -93,23 +93,27 @@ NAUTILUS
 """
 
 
-def validate_response(n_objectives, response: Dict) -> None:
+def validate_response(n_objectives: int, response: Dict, first_iteration_bool: bool) -> None:
     """
     Validate decision maker's response.
+
+    Args:
+        n_objectives (int): Number of objectives-
+        response (Dict) : Decision maker's response containing preference information.
+        first_iteration_bool (bool) : Indicating whether the iteration round is the first one (True) or not (False).
     """
-    if "n_iterations" not in response:
+    # if it's the first iteration round and info on number of iteration rounds is missing
+    if first_iteration_bool and "n_iterations" not in response:
         raise NautilusException("'n_iterations' entry missing")
     validate_preferences(n_objectives, response)
-    n_iterations = response["n_iterations"]
-
-    if not isinstance(n_iterations, int) or int(n_iterations) < 1:
-        raise NautilusException("'n_iterations' must be a positive integer greater than zero")
 
 
 def validate_preferences(n_objectives: int, response: Dict) -> None:
     """
     Validate decision maker's preferences.
     """
+    if response["n_iterations"]:
+        validate_n_iterations(response["n_iterations"])
     if "preference_method" not in response:
         raise NautilusException("'preference_method entry missing")
     if response["preference_method"] not in [1, 2]:
@@ -140,14 +144,14 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
             raise NautilusException(msg)
 
 
-def validate_itn(itn: int) -> None:
+def validate_n_iterations(n_it: int) -> None:
     """
-    Validate decision maker's new preference for number of iterations left.
+    Validate decision maker's preference for number of iterations.
     """
-    if itn < 0:
+    if not isinstance(n_it, int) or int(n_it) < 1:
         msg = (
             "The given number of iterations left "
-            "should be positive. Given iterations '{}'".format(str(itn))
+            "should be a positive integer greater than zero. Given iterations '{}'".format(str(n_it))
         )
         raise NautilusException(msg)
 
@@ -210,9 +214,12 @@ class NautilusRequest(BaseRequest):
     ):
         self.n_objectives = len(ideal)
         msg = (
-            "In case you wish to change the number of remaining iterations lower, please specify the number as "
+            "In case you wish to change the number of remaining iterations, please specify the number as "
             "'n_iterations'.\n "
-            "In case you wish to take a step back to the previous iteration point, please state 'True' here.\n"
+            "In case you wish to take a step back to the previous iteration point, please state 'True' as 'step_back'. "
+            "Otherwise state 'False' as 'step_back'\n"
+            "In case you wish to use preference information from previous iteration, please state 'True' as "
+            "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
             "Please specify as 'preference_method' whether to \n"
             "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
             "2. Specify percentages reflecting how much would you like to improve each of the current objective "
@@ -234,8 +241,6 @@ class NautilusRequest(BaseRequest):
     @BaseRequest.response.setter
     def response(self, response: Dict):
         validate_response(self.n_objectives, response)
-        if response["n_iterations"]:
-            validate_itn(response["n_iterations"])
         self._response = response
 
 
@@ -430,6 +435,14 @@ class Nautilus(InteractiveMethod):
             self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
         )
 
+    def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
+        """Handles the intermediate requests.
+
+        """
+
+
+
+
     def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
                                      utopian: np.ndarray) -> np.ndarray:
         """
@@ -526,7 +539,7 @@ class Nautilus(InteractiveMethod):
                                           constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
-            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=None)
+            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=method)
             res = minimizer.minimize(x0)
 
             # store objective function values as new lower bounds
