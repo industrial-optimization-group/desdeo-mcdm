@@ -73,8 +73,8 @@ class EpsilonConstraintMethod:
         e: np.ndarray = np.array([-(f - v) for f, v in zip(epsilon_left_side, self.epsilons)])
 
         if self.constraints:
-            c = self.constraints(xs, 0)
-            return np.concatenate([c, e])
+            c = self.constraints(xs)
+            return np.concatenate([c, e], axis=None)  # does it work with multiple constraints?
         else:
             return e
 
@@ -194,7 +194,7 @@ class NautilusInitialRequest(BaseRequest):
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
-        validate_response(self.n_objectives, response)
+        validate_response(self.n_objectives, response, first_iteration_bool=True)
         self._response = response
 
 
@@ -240,7 +240,7 @@ class NautilusRequest(BaseRequest):
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
-        validate_response(self.n_objectives, response)
+        validate_response(self.n_objectives, response, first_iteration_bool=False)
         self._response = response
 
 
@@ -312,7 +312,7 @@ class Nautilus(InteractiveMethod):
         self._problem = problem
         self._objectives: np.ndarray = lambda x: self._problem.evaluate(x).objectives  # objective function values
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
-        self._constraint = [c.evaluator for c in self._problem.constraints]
+        self._constraints = lambda x: self._problem.evaluate(x).constraints
 
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
@@ -419,7 +419,7 @@ class Nautilus(InteractiveMethod):
         # calculate new bounds and store the information
         new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
                                                  self._zs[self._step_number - 1], self._variable_bounds,
-                                                 self._constraint[0], None)  # how to include multiple constraints?
+                                                 self._constraints, None)  # how to include multiple constraints?
 
         self._lower_bounds[self._step_number + 1] = new_lower_bounds
         self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
@@ -440,8 +440,13 @@ class Nautilus(InteractiveMethod):
 
         """
 
+        # change the number of iterations
+        if request.response["n_iterations"]:
+            self._n_iterations = request.response["n_iterations"]
+            self._n_iterations_left = self._n_iterations
 
-
+        if request.response["step_back"]:
+            pass
 
     def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
                                      utopian: np.ndarray) -> np.ndarray:
