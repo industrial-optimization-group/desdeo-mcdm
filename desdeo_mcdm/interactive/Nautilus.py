@@ -98,24 +98,35 @@ def validate_response(n_objectives: int, response: Dict, first_iteration_bool: b
     Validate decision maker's response.
 
     Args:
-        n_objectives (int): Number of objectives-
+        n_objectives (int): Number of objectives.
         response (Dict) : Decision maker's response containing preference information.
         first_iteration_bool (bool) : Indicating whether the iteration round is the first one (True) or not (False).
     """
-    # if it's the first iteration round and info on number of iteration rounds is missing
-    if first_iteration_bool and "n_iterations" not in response:
-        raise NautilusException("'n_iterations' entry missing")
-    validate_preferences(n_objectives, response)
+
+    if first_iteration_bool:
+        if "n_iterations" not in response:
+            raise NautilusException("'n_iterations' entry missing")
+        if "step_back" in response:
+            raise NautilusException("Cannot take a step back on first iteration.")
+        if "use_previous_preference" in response:
+            raise NautilusException("Cannot use previous preferences on first iteration.")
+        validate_preferences(n_objectives, response)
+    else:
+        if not response["use_previous_preference"]:  # if dm wants to provide new preference info
+            validate_preferences(n_objectives, response)
+    if response["n_iterations"]:  # both for providing initial and new numbers of iterations.
+        validate_n_iterations(response["n_iterations"])
 
 
 def validate_preferences(n_objectives: int, response: Dict) -> None:
     """
     Validate decision maker's preferences.
     """
-    if response["n_iterations"]:
-        validate_n_iterations(response["n_iterations"])
+
     if "preference_method" not in response:
         raise NautilusException("'preference_method entry missing")
+    if "preference_info" not in response:
+        raise NautilusException("'preference_info entry missing")
     if response["preference_method"] not in [1, 2]:
         raise NautilusException("please specify either preference method 1 (rank) or 2 (percentages).")
     if "preference_info" not in response:
