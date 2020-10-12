@@ -427,7 +427,7 @@ class Nautilus(InteractiveMethod):
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
-        self._fs[self._step_number] = result["fun"]
+        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]  # is this the proper way to access values?
 
         # step 3
         # calculate next iteration point
@@ -475,6 +475,9 @@ class Nautilus(InteractiveMethod):
             self._step_back = False
             self._n_iterations_left -= 1
             self._step_number += 1
+
+            # use the solution and objective of last step
+            self._xs[self._step_number] = self._xs[self._step_number - 1]
             self._fs[self._step_number] = self._fs[self._step_number - 1]
 
             # go to step 3:
@@ -509,6 +512,7 @@ class Nautilus(InteractiveMethod):
 
             # take a short step
             if resp["short_step"]:
+                self._short_step = True
                 self._zs[self._step_number] = 0.5*self._zs[self._step_number] + 0.5*self._zs[self._step_number - 1]
 
                 # go to step 4
@@ -545,11 +549,11 @@ class Nautilus(InteractiveMethod):
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
                 result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
-                                        self._variable_bounds, method=None)  # include preference info on method?
+                                        self._variable_bounds, method=None)
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
-                self._fs[self._step_number] = result["fun"]
+                self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
                 # step 3
                 # calculate next iteration point
@@ -641,7 +645,7 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        return ((itn - 1) / itn) * z_prev + ((1 / itn) * f_current)
+        return ((itn - 1) / itn) * z_prev + (1 / itn) * f_current
 
     def calculate_bounds(self, objectives: Callable, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
                          bounds: Union[np.ndarray, None], constraints: Callable,
@@ -754,57 +758,65 @@ if __name__ == "__main__":
     ideal = np.array([196.34971768, -2375.93349431])
     nadir = np.array([35342.91192077, -98.27906444])
 
+    # start solving
     method = Nautilus(prob, ideal, nadir)
-
+    print("Let's start solving\n")
     req = method.start()
 
+    # initial preferences
     n_iterations = 11
-
     req.response = {
         "n_iterations": n_iterations,
         "preference_method": 1,
-        "preference_info": [1, 2],
+        "preference_info": np.array([1, 2]),
     }
-
+    # 1 - continue with same preferences
     req = method.iterate(req)
+    print(req.content["distance"])
     req.response = {
         "step_back": False,
         "short_step": False,
         "use_previous_preference": True,
     }
-    print(req.content["distance"])
+
+    # 2 - take a step back and a short step with same preferences
     req = method.iterate(req)
     print(req.content["distance"])
+    req.response = {
+        "step_back": True,
+        "short_step": True,
+        "use_previous_preference": True,
+    }
 
-"""
-"In case you wish to change the number of remaining iterations, please specify the number as "
-            "'n_iterations'.\n "
-            "In case you wish to take a step back to the previous iteration point, please state 'True' as "
-            "'step_back'. "
-            "Otherwise state 'False' as 'step_back'\n"
-            "In case you wish to take a step back and take a shorter step with the previous preference information,"
-            "please state 'True' as 'short_step'. Otherwise, please state 'False' as 'short_step'. \n"
-            "In case you wish to use preference information from previous iteration, please state 'True' as "
-            "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
-            "In case you chose to not to use preference information from previous iteration, \n"
-            "Please specify as 'preference_method' whether to \n"
-            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-            "values."
-            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
-            "each objective as 'preference_info'.
+    # 3 - change the number of iterations lower and continue with same preferences
+    req = method.iterate(req)
+    print(req.content["distance"], req.content["n_iterations"])
+    req.response = {
+        "n_iterations": 5,
+        "step_back": False,
+        "use_previous_preference": True,
+    }
 
-"""
-"""
+    # 4 - take a step back and provide new preferences
+    req = method.iterate(req)
+    print(req.content["distance"], req.content["n_iterations"])
+    req.response = {
+        "step_back": True,
+        "short_step": False,
+        "use_previous_preference": False,
+        "preference_method": 2,
+        "preference_info": np.array([50, 50]),
+    }
+
+    # 5. continue with the same preferences
     while method._n_iterations_left > 1:
-        print(method._n_iterations_left)
         req = method.iterate(req)
-        print(req.content["points"])
-        req.response = {"preferred_point_index": 0}
+        print("Distance", req.content["distance"])
+        print("Iterations left", method._n_iterations_left)
+        print(method._fs[method._step_number], method._xs[method._step_number])
+        req.response = {"step_back": False,
+                        "use_previous_preference": True
+                        }
 
-    print(method._n_iterations_left)
     req = method.iterate(req)
-    print(method._n_iterations_left)
-    print(method._distance)
-    print(req.content["solution"])
-"""
+    print(req.content)
