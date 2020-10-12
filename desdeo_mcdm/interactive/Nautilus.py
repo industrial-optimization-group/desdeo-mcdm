@@ -222,45 +222,27 @@ class NautilusRequest(BaseRequest):
             lower_bounds: np.ndarray,
             upper_bounds: np.ndarray,
             distance: np.ndarray,
-            step_back_bool: bool,
-            new_pref_info_bool: bool
     ):
         self.n_objectives = len(ideal)
 
-        if step_back_bool and new_pref_info_bool:  # dm wants to take a step back and give new preferences.
-            msg = ("Please specify as 'preference_method' whether to \n"
-                   "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-                   "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-                   "values."
-                   "Depending on your selection on 'preference_method', please specify either the ranks or "
-                   "percentages for "
-                   "each objective as 'preference_info'."
-                   )
-
-        elif step_back_bool:  # dm wants to take a step back
-            msg = (
-                "Would you like to provide new preference information starting from previous iteration point? Please "
-                "state 'True' as 'new_preference_info'. Otherwise, please state 'False' as 'new_preference_info'."
-                "In case you chose 'False', would you like to take a shorter step with the same preference information"
-                "given before? In that case, please state 'True' as 'short_step'. Otherwise, please state 'False' as "
-                "'short_step'."
-                )
-        else:
-            msg = (
-                "In case you wish to change the number of remaining iterations, please specify the number as "
-                "'n_iterations'.\n "
-                "In case you wish to take a step back to the previous iteration point, please state 'True' as "
-                "'step_back'. "
-                "Otherwise state 'False' as 'step_back'\n"
-                "In case you wish to use preference information from previous iteration, please state 'True' as "
-                "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
-                "Please specify as 'preference_method' whether to \n"
-                "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-                "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-                "values."
-                "Depending on your selection on 'preference_method', please specify either the ranks or percentages "
-                "for "
-                "each objective as 'preference_info'.")
+        msg = (
+            "In case you wish to change the number of remaining iterations, please specify the number as "
+            "'n_iterations'.\n "
+            "In case you wish to take a step back to the previous iteration point, please state 'True' as "
+            "'step_back'. "
+            "Otherwise state 'False' as 'step_back'\n"
+            "In case you wish to take a step back and take a shorter step with the previous preference information,"
+            "please state 'True' as 'short_step'. Otherwise, please state 'False' as 'short_step'. \n"
+            "In case you wish to use preference information from previous iteration, please state 'True' as "
+            "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
+            "In case you chose to not to use preference information from previous iteration, \n"
+            "Please specify as 'preference_method' whether to \n"
+            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
+            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
+            "values."
+            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
+            "each objective as 'preference_info'."
+            )
         content = {
             "message": msg,
             "ideal": ideal,
@@ -494,6 +476,7 @@ class Nautilus(InteractiveMethod):
         self._xs[self._step_number] = result["x"]
         self._fs[self._step_number] = result["fun"]
 
+        # step 3
         # calculate next iteration point
         self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                      self._zs[self._step_number - 1],
@@ -514,7 +497,7 @@ class Nautilus(InteractiveMethod):
         # return the information from iteration round to be shown to the DM.
         return NautilusRequest(
             self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
-            self._upper_bounds[self._step_number + 1], self._ds[self._step_number], False, False
+            self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
         )
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
@@ -522,45 +505,122 @@ class Nautilus(InteractiveMethod):
 
         """
 
+        resp = request.response
+
         # change the number of iterations (step 6)
-        if request.response["n_iterations"]:
-            self._n_iterations = request.response["n_iterations"]
+        if resp["n_iterations"]:
+            self._n_iterations = resp["n_iterations"]
             self._n_iterations_left = self._n_iterations
 
-        # take a step back (step 7)
-        if request.response["step_back"]:
-            self._step_back = True
-            return NautilusRequest(self._ideal, self._nadir, self._n_iterations,
-                                   self._lower_bounds[self._step_number + 1],
-                                   self._upper_bounds[self._step_number + 1], self._ds[self._step_number], True, False)
-
-        if self._step_back:
-            if request.response["new_preference_info"]:
-                return NautilusRequest(self._ideal, self._nadir, self._n_iterations,
-                                   self._lower_bounds[self._step_number + 1],
-                                   self._upper_bounds[self._step_number + 1], self._ds[self._step_number], True, True)
-
-            elif request.response["preference_method"]:  # took a step back and gave new preferences
-                # set preference information
-                self._preference_method: int = request.response["preference_method"]
-                self._preference_info: np.ndarray = request.response["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
-                                                                             self._nadir, self._utopian)
-
-                # TODO: Continue this; step back new preference info given (step 9)
-
-        if self._n_iterations_left <= 1:  # stop solution process
+        # stop solution process
+        if self._n_iterations_left <= 1:
             self._n_iterations_left = 0
             return NautilusStopRequest(self._xs[self._step_number], self._fs[self._step_number])
 
-        else:
+        # use same preference and don't step back
+        if resp["use_previous_preference"] and not resp["step_back"]:
+            self._step_back = False
             self._n_iterations_left -= 1
             self._step_number += 1
-            return NautilusRequest(self._ideal, self._nadir, self._n_iterations,
-                                   self._lower_bounds[self._step_number + 1],
-                                   self._upper_bounds[self._step_number + 1], self._ds[self._step_number], False, False)
-            # TODO: Continue this; not step back, ask if new preferences, short step? (Step 8)
+            self._fs[self._step_number] = self._fs[self._step_number - 1]
 
+            # go to step 3:
+            # calculate next iteration point
+            self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
+                                                                         self._zs[self._step_number - 1],
+                                                                         self._fs[self._step_number])
+
+            # calculate new bounds and store the information
+            new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
+                                                     self._problem.get_variable_upper_bounds(),
+                                                     self._zs[self._step_number - 1], self._variable_bounds,
+                                                     self._constraints, None)
+
+            self._lower_bounds[self._step_number + 1] = new_lower_bounds
+            self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+
+            # calculate distance from current iteration point to Pareto optimal set
+            self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
+                                                                  self._nadir,
+                                                                  self._fs[self._step_number])
+
+            # return the information from iteration round to be shown to the DM.
+            return NautilusRequest(
+                self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+                self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+            )
+
+        # take a step back
+        if resp["step_back"]:
+            self._step_back = True
+
+            # take a short step
+            if resp["short_step"]:
+                self._zs[self._step_number] = 0.5*self._zs[self._step_number] + 0.5*self._zs[self._step_number - 1]
+
+                # go to step 4
+                # calculate new bounds and store the information
+                new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
+                                                         self._problem.get_variable_upper_bounds() / 2,
+                                                         self._zs[self._step_number - 1], self._variable_bounds,
+                                                         self._constraints, None)
+
+                self._lower_bounds[self._step_number + 1] = new_lower_bounds
+                self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+
+                # calculate distance from current iteration point to Pareto optimal set
+                self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
+                                                                      self._nadir,
+                                                                      self._fs[self._step_number])
+
+                # return the information from iteration round to be shown to the DM.
+                return NautilusRequest(
+                    self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+                    self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+                )
+
+            # use new preferences
+            elif not resp["use_previous_preference"]:
+
+                # set preference information
+                self._preference_method: int = resp["preference_method"]
+                self._preference_info: np.ndarray = resp["preference_info"]
+                self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
+                                                                             self._nadir, self._utopian)
+
+                # set reference point, initial values for decision variables and solve the problem
+                self._q = self._zs[self._step_number - 1]
+                x0 = self._problem.get_variable_upper_bounds() / 2
+                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
+                                        self._variable_bounds, method=None)  # include preference info on method?
+
+                # update current solution and objective function values
+                self._xs[self._step_number] = result["x"]
+                self._fs[self._step_number] = result["fun"]
+
+                # step 3
+                # calculate next iteration point
+                self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
+                                                                             self._zs[self._step_number - 1],
+                                                                             self._fs[self._step_number])
+                # calculate new bounds and store the information
+                new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
+                                                         self._zs[self._step_number - 1], self._variable_bounds,
+                                                         self._constraints, None)
+
+                self._lower_bounds[self._step_number + 1] = new_lower_bounds
+                self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+
+                # calculate distance from current iteration point to Pareto optimal set
+                self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
+                                                                      self._nadir,
+                                                                      self._fs[self._step_number])
+
+                # return the information from iteration round to be shown to the DM.
+                return NautilusRequest(
+                    self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+                    self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+                )
 
     def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
                                      utopian: np.ndarray) -> np.ndarray:
@@ -769,3 +829,24 @@ if __name__ == "__main__":
     print(req.content["solution"])
     
     """
+    """
+        if step_back_bool and new_pref_info_bool:  # dm wants to take a step back and give new preferences.
+            msg = (
+                "Please specify as 'preference_method' whether to \n"
+                "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
+                "2. Specify percentages reflecting how much would you like to improve each of the current objective "
+                "values."
+                "Depending on your selection on 'preference_method', please specify either the ranks or "
+                "percentages for "
+                "each objective as 'preference_info'."
+                )
+
+        elif step_back_bool:  # dm wants to take a step back
+            msg = (
+                "Would you like to provide new preference information starting from previous iteration point? Please "
+                "state 'True' as 'new_preference_info'. Otherwise, please state 'False' as 'new_preference_info'."
+                "In case you chose 'False', would you like to take a shorter step with the same preference information"
+                "given before? In that case, please state 'True' as 'short_step'. Otherwise, please state 'False' as "
+                "'short_step'."
+                )
+"""
