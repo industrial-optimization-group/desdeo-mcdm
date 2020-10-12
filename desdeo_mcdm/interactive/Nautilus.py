@@ -114,7 +114,7 @@ def validate_response(n_objectives: int, response: Dict, first_iteration_bool: b
     else:
         if not response["use_previous_preference"]:  # if dm wants to provide new preference info
             validate_preferences(n_objectives, response)
-    if response["n_iterations"]:  # both for providing initial and new numbers of iterations.
+    if "n_iterations" in response:  # both for providing initial and new numbers of iterations.
         validate_n_iterations(response["n_iterations"])
 
 
@@ -243,53 +243,6 @@ class NautilusRequest(BaseRequest):
             "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
             "each objective as 'preference_info'."
             )
-        content = {
-            "message": msg,
-            "ideal": ideal,
-            "nadir": nadir,
-            "n_iterations": n_iterations,
-            "lower_bounds": lower_bounds,
-            "upper_bounds": upper_bounds,
-            "distance": distance,
-        }
-
-        super().__init__("reference_point_preference", "required", content=content)
-
-    @BaseRequest.response.setter
-    def response(self, response: Dict):
-        validate_response(self.n_objectives, response, first_iteration_bool=False)
-        self._response = response
-
-
-class NautilusStepBackRequest(BaseRequest):
-    """A request class to handle the stepping back requests.
-
-        """
-
-    def __init__(
-            self,
-            ideal: np.ndarray,
-            nadir: np.ndarray,
-            n_iterations: int,
-            lower_bounds: np.ndarray,
-            upper_bounds: np.ndarray,
-            distance: np.ndarray,
-    ):
-        self.n_objectives = len(ideal)
-
-        msg = (
-            "In case you wish to change the number of remaining iterations, please specify the number as "
-            "'n_iterations'.\n "
-            "In case you wish to take a step back to the previous iteration point, please state 'True' as 'step_back'. "
-            "Otherwise state 'False' as 'step_back'\n"
-            "In case you wish to use preference information from previous iteration, please state 'True' as "
-            "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
-            "Please specify as 'preference_method' whether to \n"
-            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-            "values."
-            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
-            "each objective as 'preference_info'.")
         content = {
             "message": msg,
             "ideal": ideal,
@@ -505,14 +458,14 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        resp = request.response
+        resp: dict = request.response
 
         # change the number of iterations (step 6)
-        if resp["n_iterations"]:
+        if "n_iterations" in resp:
             self._n_iterations = resp["n_iterations"]
             self._n_iterations_left = self._n_iterations
 
-        # stop solution process
+        # last iteration, stop solution process
         if self._n_iterations_left <= 1:
             self._n_iterations_left = 0
             return NautilusStopRequest(self._xs[self._step_number], self._fs[self._step_number])
@@ -532,7 +485,7 @@ class Nautilus(InteractiveMethod):
 
             # calculate new bounds and store the information
             new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
-                                                     self._problem.get_variable_upper_bounds(),
+                                                     self._problem.get_variable_upper_bounds() / 2,
                                                      self._zs[self._step_number - 1], self._variable_bounds,
                                                      self._constraints, None)
 
@@ -748,7 +701,7 @@ if __name__ == "__main__":
     # variables
     var_names = ["r", "h"]  # Make sure that the variable names are meaningful to you.
 
-    initial_values = [2.5, 11]
+    initial_values = [2.6, 11]
     lower_bounds = [2.5, 10]
     upper_bounds = [15, 50]
     bounds = np.stack((lower_bounds, upper_bounds))
@@ -814,8 +767,35 @@ if __name__ == "__main__":
     }
 
     req = method.iterate(req)
-    # req = method.iterate(req)
-    """
+    req.response = {
+        "step_back": False,
+        "short_step": False,
+        "use_previous_preference": True,
+    }
+    print(req.content["distance"])
+    req = method.iterate(req)
+    print(req.content["distance"])
+
+"""
+"In case you wish to change the number of remaining iterations, please specify the number as "
+            "'n_iterations'.\n "
+            "In case you wish to take a step back to the previous iteration point, please state 'True' as "
+            "'step_back'. "
+            "Otherwise state 'False' as 'step_back'\n"
+            "In case you wish to take a step back and take a shorter step with the previous preference information,"
+            "please state 'True' as 'short_step'. Otherwise, please state 'False' as 'short_step'. \n"
+            "In case you wish to use preference information from previous iteration, please state 'True' as "
+            "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
+            "In case you chose to not to use preference information from previous iteration, \n"
+            "Please specify as 'preference_method' whether to \n"
+            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
+            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
+            "values."
+            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
+            "each objective as 'preference_info'.
+
+"""
+"""
     while method._n_iterations_left > 1:
         print(method._n_iterations_left)
         req = method.iterate(req)
@@ -827,26 +807,4 @@ if __name__ == "__main__":
     print(method._n_iterations_left)
     print(method._distance)
     print(req.content["solution"])
-    
-    """
-    """
-        if step_back_bool and new_pref_info_bool:  # dm wants to take a step back and give new preferences.
-            msg = (
-                "Please specify as 'preference_method' whether to \n"
-                "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-                "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-                "values."
-                "Depending on your selection on 'preference_method', please specify either the ranks or "
-                "percentages for "
-                "each objective as 'preference_info'."
-                )
-
-        elif step_back_bool:  # dm wants to take a step back
-            msg = (
-                "Would you like to provide new preference information starting from previous iteration point? Please "
-                "state 'True' as 'new_preference_info'. Otherwise, please state 'False' as 'new_preference_info'."
-                "In case you chose 'False', would you like to take a shorter step with the same preference information"
-                "given before? In that case, please state 'True' as 'short_step'. Otherwise, please state 'False' as "
-                "'short_step'."
-                )
 """
