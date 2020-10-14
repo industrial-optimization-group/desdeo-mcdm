@@ -416,7 +416,7 @@ class Nautilus(InteractiveMethod):
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
-        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]  # is this the proper way to access values?
+        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0] # is this the proper way to access values?
 
         # step 3
         # calculate next iteration point
@@ -451,6 +451,7 @@ class Nautilus(InteractiveMethod):
 
         # change the number of iterations
         if "n_iterations" in resp:
+            validate_n_iterations(resp["n_iterations"])
             self._n_iterations = resp["n_iterations"]
             self._n_iterations_left = self._n_iterations
 
