@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Union, Callable
+from typing import Dict, List, Optional, Union, Callable
 
 import numpy as np
 
@@ -10,9 +10,6 @@ from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
-
-from sklearn.cluster import KMeans
-from sklearn.metrics import pairwise_distances_argmin_min
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
@@ -322,7 +319,7 @@ class Nautilus(InteractiveMethod):
         # initialize problem
         super().__init__(problem)
         self._problem = problem
-        self._objectives: np.ndarray = lambda x: self._problem.evaluate(x).objectives
+        self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
         self._constraints = lambda x: self._problem.evaluate(x).constraints
 
@@ -342,7 +339,7 @@ class Nautilus(InteractiveMethod):
         self._step_number = 1
 
         # iteration points
-        self._zs: List[np.ndarray] = []
+        self._zs = []
 
         # solutions, objectives, and distances for each iteration
         self._xs: List[np.ndarray] = []
@@ -350,7 +347,7 @@ class Nautilus(InteractiveMethod):
         self._ds: List[np.ndarray] = []
 
         # The current reference point
-        self._q: np.ndarray = None
+        self._q: Union[None, np.ndarray] = None
 
         # preference information
         self._preference_method = None
@@ -674,7 +671,7 @@ class Nautilus(InteractiveMethod):
             eps = EpsilonConstraintMethod(objectives,
                                           i,
                                           # take out the objective to be minimized
-                                          [val for ind, val in enumerate(epsilons) if ind != i],
+                                          np.array([val for ind, val in enumerate(epsilons) if ind != i]),
                                           constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
@@ -744,7 +741,7 @@ if __name__ == "__main__":
 
     def con_second(xs, _):
         xs = np.atleast_2d(xs)
-        return (xs[:, 0] / xs[:, 1] - 5)
+        return xs[:, 0] / xs[:, 1] - 5
 
 
     cons1 = ScalarConstraint(name="c_1", n_objective_funs=2, n_decision_vars=2, evaluator=con_golden)
