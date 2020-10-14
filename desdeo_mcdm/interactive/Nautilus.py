@@ -92,7 +92,6 @@ class EpsilonConstraintMethod:
 NAUTILUS
 """
 
-
 def validate_response(n_objectives: int, response: Dict, first_iteration_bool: bool) -> None:
     """
     Validate decision maker's response.
@@ -216,9 +215,7 @@ class NautilusRequest(BaseRequest):
 
     def __init__(
             self,
-            ideal: np.ndarray,
-            nadir: np.ndarray,
-            n_iterations: int,
+            z_current: np.ndarray,
             lower_bounds: np.ndarray,
             upper_bounds: np.ndarray,
             distance: np.ndarray,
@@ -245,9 +242,7 @@ class NautilusRequest(BaseRequest):
             )
         content = {
             "message": msg,
-            "ideal": ideal,
-            "nadir": nadir,
-            "n_iterations": n_iterations,
+            "current_iteration_point": z_current,
             "lower_bounds": lower_bounds,
             "upper_bounds": upper_bounds,
             "distance": distance,
@@ -278,6 +273,7 @@ class Nautilus(InteractiveMethod):
     Implements the basic NAUTILUS methods as presented in `Miettinen 2010`
 
         Args:
+            problem (MOProblem): Problem to be solved.
             ideal (np.ndarray): The ideal objective vector of the problem
             being represented by the Pareto front.
             nadir (np.ndarray): The nadir objective vector of the problem
@@ -285,7 +281,6 @@ class Nautilus(InteractiveMethod):
             epsilon (float): A small number used in calculating the utopian point.
             objective_names (Optional[List[str]], optional): Names of the
             objectives. List must match the number of columns in
-            pareto_front. Defaults to 'f1', 'f2', 'f3', ...
             minimize (Optional[List[int]], optional): Multipliers for each
             objective. '-1' indicates maximization and '1' minimization.
             Defaults to all objective values being minimized.
@@ -302,7 +297,7 @@ class Nautilus(InteractiveMethod):
             nadir: np.ndarray,
             epsilon: float = 0.0,
             objective_names: Optional[List[str]] = None,
-            minimize: Optional[List[int]] = None,
+            minimize: Optional[List[int]] = None,  # is this needed, if information is included in defining objectives?
     ):
 
         if not ideal.shape == nadir.shape:
@@ -340,8 +335,6 @@ class Nautilus(InteractiveMethod):
         self._utopian = [ideal_i - self._epsilon for ideal_i in self._ideal]
 
         # bounds of the reachable region
-        self._reachable_ub = self._nadir
-        self._reachable_lb = self._ideal
         self._lower_bounds: List[np.ndarray] = []
         self._upper_bounds: List[np.ndarray] = []
 
@@ -359,8 +352,6 @@ class Nautilus(InteractiveMethod):
         # The current reference point
         self._q: np.ndarray = None
 
-        self._distance = None
-
         # preference information
         self._preference_method = None
         self._preference_info = None
@@ -371,6 +362,7 @@ class Nautilus(InteractiveMethod):
         self._n_iterations_left = None
 
         # flags for the iteration phase
+        # not needed atm, should utilize or not?
         self._use_previous_preference: bool = False
         self._step_back: bool = False
         self._short_step: bool = False
@@ -423,7 +415,7 @@ class Nautilus(InteractiveMethod):
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
-                                self._variable_bounds, method=None)  # include preference info on method?
+                                self._variable_bounds, method=None)
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
@@ -449,7 +441,7 @@ class Nautilus(InteractiveMethod):
 
         # return the information from iteration round to be shown to the DM.
         return NautilusRequest(
-            self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+            self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
             self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
         )
 
@@ -460,7 +452,7 @@ class Nautilus(InteractiveMethod):
 
         resp: dict = request.response
 
-        # change the number of iterations (step 6)
+        # change the number of iterations
         if "n_iterations" in resp:
             self._n_iterations = resp["n_iterations"]
             self._n_iterations_left = self._n_iterations
@@ -480,7 +472,6 @@ class Nautilus(InteractiveMethod):
             self._xs[self._step_number] = self._xs[self._step_number - 1]
             self._fs[self._step_number] = self._fs[self._step_number - 1]
 
-            # go to step 3:
             # calculate next iteration point
             self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                          self._zs[self._step_number - 1],
@@ -502,7 +493,7 @@ class Nautilus(InteractiveMethod):
 
             # return the information from iteration round to be shown to the DM.
             return NautilusRequest(
-                self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+                self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
                 self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
             )
 
@@ -532,7 +523,7 @@ class Nautilus(InteractiveMethod):
 
                 # return the information from iteration round to be shown to the DM.
                 return NautilusRequest(
-                    self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+                    self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
@@ -555,11 +546,11 @@ class Nautilus(InteractiveMethod):
                 self._xs[self._step_number] = result["x"]
                 self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
-                # step 3
                 # calculate next iteration point
                 self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                              self._zs[self._step_number - 1],
                                                                              self._fs[self._step_number])
+
                 # calculate new bounds and store the information
                 new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
                                                          self._zs[self._step_number - 1], self._variable_bounds,
@@ -575,7 +566,7 @@ class Nautilus(InteractiveMethod):
 
                 # return the information from iteration round to be shown to the DM.
                 return NautilusRequest(
-                    self._ideal, self._nadir, self._n_iterations, self._lower_bounds[self._step_number + 1],
+                    self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
@@ -583,7 +574,18 @@ class Nautilus(InteractiveMethod):
                                      utopian: np.ndarray) -> np.ndarray:
         """
         Calculate preference factors based on decision maker's preference information.
+
+        Args:
+            pref_method (int): Preference information method (either ranks (1) or percentages (2)).
+            pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
+                                    function.
+            nadir (np.ndarray): Nadir vector.
+            utopian (np.ndarray): Utopian vector.
+
+        Returns:
+            Weights assigned to each of the objective functions in achievement scalarizing function.
         """
+
         if pref_method == 1:  # ranks
             return [1 / (r_i * (n_i - u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)]
         elif pref_method == 2:  # percentages
@@ -649,7 +651,7 @@ class Nautilus(InteractiveMethod):
 
     def calculate_bounds(self, objectives: Callable, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
                          bounds: Union[np.ndarray, None], constraints: Callable,
-                         method: Union[ScalarMethod, str, None]):
+                         method: Union[ScalarMethod, str, None]) -> np.ndarray:
         """
         Calculate the new bounds using Epsilon constraint method.
         Args:
@@ -662,8 +664,9 @@ class Nautilus(InteractiveMethod):
             method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
-
+            new_lower_bounds (np.ndarray): New lower bounds for objective functions.
         """
+
         new_lower_bounds: np.ndarray = [None] * n_objectives
 
         # solve new lower bounds for each objective
@@ -702,6 +705,7 @@ class Nautilus(InteractiveMethod):
 
 # testing the method
 if __name__ == "__main__":
+
     # variables
     var_names = ["r", "h"]  # Make sure that the variable names are meaningful to you.
 
@@ -712,27 +716,23 @@ if __name__ == "__main__":
 
     variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
 
-
     # objectives
+    def volume(xs):
+        return np.pi * xs[:, 0] ** 2 * xs[:, 1]
 
-    def volume(r, h):
-        return np.pi * r ** 2 * h
 
-
-    def area(r, h):
-        return 2 * np.pi ** 2 + np.pi * r * h
+    def area(xs):
+        return 2 * np.pi ** 2 + np.pi * xs[:, 0] * xs[:, 1]
 
 
     def objective(xs):
         # xs is a 2d array like, which has different values for r and h on its first and second columns respectively.
         xs = np.atleast_2d(xs)
-        return np.stack((volume(xs[:, 0], xs[:, 1]), -area(xs[:, 0], xs[:, 1]))).T
-
+        return np.stack((volume(xs), -area(xs))).T
 
     f1 = _ScalarObjective("y1", volume, maximize=True)
     f2 = _ScalarObjective("y2", area)
     f1_2 = VectorObjective("y3", objective)
-
 
     # constraints
     def con_golden(xs, _):
@@ -751,12 +751,14 @@ if __name__ == "__main__":
     cons2 = ScalarConstraint(name="c_2", n_objective_funs=2, n_decision_vars=2, evaluator=con_second)
 
     # problem
-    prob = MOProblem(objectives=[f1_2], variables=variables, constraints=[cons1, cons2])
+    prob = MOProblem(objectives=[f1, f2], variables=variables, constraints=[cons1, cons2])  # objectives "seperately"
+    # prob = MOProblem(objectives=[f1_2], variables=variables, constraints=[cons1, cons2])  # objectives in one function
 
     # ideal and nadir
-
-    ideal = np.array([196.34971768, -2375.93349431])
-    nadir = np.array([35342.91192077, -98.27906444])
+    ideal = np.array([196.34971768, 2375.93349431])
+    nadir = np.array([35342.91192077, 98.27906444])
+    print("Ideal: ", ideal)
+    print("Nadir: ", nadir)
 
     # start solving
     method = Nautilus(prob, ideal, nadir)
@@ -772,7 +774,9 @@ if __name__ == "__main__":
     }
     # 1 - continue with same preferences
     req = method.iterate(req)
-    print(req.content["distance"])
+    print("Step number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
     req.response = {
         "step_back": False,
         "short_step": False,
@@ -781,7 +785,9 @@ if __name__ == "__main__":
 
     # 2 - take a step back and a short step with same preferences
     req = method.iterate(req)
-    print(req.content["distance"])
+    print("\nStep number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
     req.response = {
         "step_back": True,
         "short_step": True,
@@ -790,7 +796,9 @@ if __name__ == "__main__":
 
     # 3 - change the number of iterations lower and continue with same preferences
     req = method.iterate(req)
-    print(req.content["distance"], req.content["n_iterations"])
+    print("\nStep number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
     req.response = {
         "n_iterations": 5,
         "step_back": False,
@@ -799,24 +807,27 @@ if __name__ == "__main__":
 
     # 4 - take a step back and provide new preferences
     req = method.iterate(req)
-    print(req.content["distance"], req.content["n_iterations"])
+    print("\nStep number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
     req.response = {
         "step_back": True,
         "short_step": False,
         "use_previous_preference": False,
         "preference_method": 2,
-        "preference_info": np.array([50, 50]),
+        "preference_info": np.array([30, 70]),
     }
 
     # 5. continue with the same preferences
     while method._n_iterations_left > 1:
         req = method.iterate(req)
-        print("Distance", req.content["distance"])
-        print("Iterations left", method._n_iterations_left)
-        print(method._fs[method._step_number], method._xs[method._step_number])
+        print("\nStep number: ", method._step_number)
+        print("Iteration point: ", req.content["current_iteration_point"])
+        print("Closeness to Pareto optimal front", req.content["distance"])
         req.response = {"step_back": False,
                         "use_previous_preference": True
                         }
 
+    print("\nEnd of solution process")
     req = method.iterate(req)
     print(req.content)
