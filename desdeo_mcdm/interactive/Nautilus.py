@@ -59,7 +59,9 @@ class EpsilonConstraintMethod:
 
         # evaluate epsilon constraint function "left-side" values with given decision variables
         epsilon_left_side = np.array(
-            [self.objectives(xs)[0][i] for i, _ in enumerate(self.objectives(xs)[0]) if i != self._to_be_minimized])
+            [val for nrow, row in enumerate(self.objectives(xs))
+             for ival, val in enumerate(row) if ival != self._to_be_minimized
+             ])
 
         if len(epsilon_left_side) != len(self.epsilons):
             msg = ("The lenght of the epsilons array ({}) must match the total number of objectives - 1 ({})."
@@ -75,19 +77,24 @@ class EpsilonConstraintMethod:
         else:
             return e
 
-    def __call__(self, objective_vector: np.ndarray) -> float:
+    def __call__(self, objective_vector: np.ndarray) -> Union[float, np.ndarray]:
         """
         Returns the value of objective function to be minimized.
         Args:
             objective_vector (np.ndarray): Values of objective functions.
+
         Returns: Value of objective function to be minimized.
         """
-        return objective_vector[0][self._to_be_minimized]
+        if np.shape(objective_vector)[0] > 1:  # more rows than one
+            return np.array([objective_vector[i][self._to_be_minimized] for i, _ in enumerate(objective_vector)])
+        else:
+            return objective_vector[0][self._to_be_minimized]
 
 
 """
 NAUTILUS
 """
+
 
 def validate_response(n_objectives: int, response: Dict, first_iteration_bool: bool) -> None:
     """
@@ -236,7 +243,7 @@ class NautilusRequest(BaseRequest):
             "values."
             "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
             "each objective as 'preference_info'."
-            )
+        )
         content = {
             "message": msg,
             "current_iteration_point": z_current,
@@ -316,12 +323,12 @@ class Nautilus(InteractiveMethod):
         else:
             self._minimize = [1 for _ in range(ideal.shape[0])]
 
-        # initialize problem
+        # initialize method with problem
         super().__init__(problem)
         self._problem = problem
         self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
-        self._constraints = lambda x: self._problem.evaluate(x).constraints
+        self._constraints: Callable = lambda x: self._problem.evaluate(x).constraints
 
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
@@ -416,9 +423,9 @@ class Nautilus(InteractiveMethod):
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
-        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0] # is this the proper way to access values?
+        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[
+            0]  # is this the proper way to access values?
 
-        # step 3
         # calculate next iteration point
         self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                      self._zs[self._step_number - 1],
@@ -451,7 +458,6 @@ class Nautilus(InteractiveMethod):
 
         # change the number of iterations
         if "n_iterations" in resp:
-            validate_n_iterations(resp["n_iterations"])
             self._n_iterations = resp["n_iterations"]
             self._n_iterations_left = self._n_iterations
 
@@ -502,9 +508,8 @@ class Nautilus(InteractiveMethod):
             # take a short step
             if resp["short_step"]:
                 self._short_step = True
-                self._zs[self._step_number] = 0.5*self._zs[self._step_number] + 0.5*self._zs[self._step_number - 1]
+                self._zs[self._step_number] = 0.5 * self._zs[self._step_number] + 0.5 * self._zs[self._step_number - 1]
 
-                # go to step 4
                 # calculate new bounds and store the information
                 new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
                                                          self._problem.get_variable_upper_bounds() / 2,
@@ -531,13 +536,15 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
+                self._preference_factors = self.calculate_preference_factors(self._preference_method,
+                                                                             self._preference_info,
                                                                              self._nadir, self._utopian)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
+                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
+                                        self._objectives,
                                         self._variable_bounds, method=None)
 
                 # update current solution and objective function values
@@ -714,6 +721,7 @@ if __name__ == "__main__":
 
     variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
 
+
     # objectives
     def volume(xs):
         return np.pi * xs[:, 0] ** 2 * xs[:, 1]
@@ -728,9 +736,11 @@ if __name__ == "__main__":
         xs = np.atleast_2d(xs)
         return np.stack((volume(xs), -area(xs))).T
 
+
     f1 = _ScalarObjective("y1", volume, maximize=True)
     f2 = _ScalarObjective("y2", area)
     f1_2 = VectorObjective("y3", objective)
+
 
     # constraints
     def con_golden(xs, _):
