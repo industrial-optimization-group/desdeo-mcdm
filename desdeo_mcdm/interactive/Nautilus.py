@@ -65,13 +65,13 @@ class EpsilonConstraintMethod:
 
         if len(epsilon_left_side) != len(self.epsilons):
             msg = ("The lenght of the epsilons array ({}) must match the total number of objectives - 1 ({})."
-                   ).format(len(self.epsilons), len(self.objectives(xs)[0]) - 1)
+                   ).format(len(self.epsilons), len(self.objectives(xs)) - 1)
             raise ECMError(msg)
 
         # evaluate values of epsilon constraint functions
         e: np.ndarray = np.array([-(f - v) for f, v in zip(epsilon_left_side, self.epsilons)])
 
-        if self.constraints:
+        if self.constraints(xs) is not None:
             c = self.constraints(xs)
             return np.concatenate([c, e], axis=None)  # does it work with multiple constraints?
         else:
@@ -96,6 +96,7 @@ NAUTILUS
 """
 
 
+# TODO: Add validation for step back; cannot step back if the iteration point is the the nadir point
 def validate_response(n_objectives: int, response: Dict, first_iteration_bool: bool) -> None:
     """
     Validate decision maker's response.
@@ -328,7 +329,7 @@ class Nautilus(InteractiveMethod):
         self._problem = problem
         self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
-        self._constraints: Callable = lambda x: self._problem.evaluate(x).constraints
+        self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
 
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
@@ -655,7 +656,7 @@ class Nautilus(InteractiveMethod):
         return ((itn - 1) / itn) * z_prev + (1 / itn) * f_current
 
     def calculate_bounds(self, objectives: Callable, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
-                         bounds: Union[np.ndarray, None], constraints: Callable,
+                         bounds: Union[np.ndarray, None], constraints: Optional[Callable],
                          method: Union[ScalarMethod, str, None]) -> np.ndarray:
         """
         Calculate the new bounds using Epsilon constraint method.
@@ -710,7 +711,7 @@ class Nautilus(InteractiveMethod):
 
 # testing the method
 if __name__ == "__main__":
-
+    """
     # variables
     var_names = ["r", "h"]  # Make sure that the variable names are meaningful to you.
 
@@ -839,3 +840,139 @@ if __name__ == "__main__":
     print("\nEnd of solution process")
     req = method.iterate(req)
     print(req.content)
+    """
+
+
+    # Define another test problem
+
+    # Objectives
+    def f1(xs):
+        return -4.07 - 2.27 * xs[:, 0]
+
+
+    def f2(xs):
+        return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - \
+               (0.01 / (1.39 - (xs[:, 0] ** 2))) - \
+               (0.3 / (1.39 - (xs[:, 1] ** 2)))
+
+
+    def f3(xs):
+        return -8.21 + (0.71 / (1.09 - (xs[:, 0] ** 2)))
+
+
+    def f4(xs):
+        return -0.96 + (0.96 / (1.09 - (xs[:, 1] ** 2)))
+
+
+    def objectives(xs):
+        return np.stack((f1(xs), f2(xs), f3(xs), f4(xs))).T
+
+
+    obj1 = _ScalarObjective("obj1", f1)
+    obj2 = _ScalarObjective("obj2", f2)
+    obj3 = _ScalarObjective("obj3", f3)
+    obj4 = _ScalarObjective("obj4", f4)
+
+    # variables
+    var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
+
+    initial_values = [0.5, 0.5]
+    lower_bounds = [0.3, 0.3]
+    upper_bounds = [1.0, 1.0]
+    bounds = np.stack((lower_bounds, upper_bounds))
+    variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
+
+    # problem
+    prob = MOProblem(objectives=[obj1, obj2, obj3, obj4], variables=variables)  # objectives "seperately"
+
+    # ideal and nadir
+    ideal = np.array([-6.34, -3.44, -7.50, 0.00])
+    nadir = np.array([-4.07, -2.83, -0.32, 9.71])
+    print("Ideal: ", ideal)
+    print("Nadir: ", nadir)
+
+    # start solving
+    method = Nautilus(prob, ideal, nadir)
+
+    print("Let's start solving\n")
+    req = method.start()
+
+    # initial preferences
+    n_iterations = 5
+    req.response = {
+        "n_iterations": n_iterations,
+        "preference_method": 1,
+        "preference_info": np.array([2, 2, 1, 1]),
+    }
+
+    # TODO: Continue with this test problem, an error with Epsilon constraint function, something to do with the
+    # fact that no constraints, I think
+    """
+    epsilons = np.array([-2.83, -0.32, 9.71])
+    eps = EpsilonConstraintMethod(objectives, 0, epsilons, constraints=None)
+    eps_constraints = eps.evaluate_constraints([0.5, 0.5])
+    print(eps_constraints)
+    """
+
+    # 1 - continue with same preferences
+    req = method.iterate(req)
+    print("Step number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+
+    req.response = {
+        "step_back": False,
+        "short_step": False,
+        "use_previous_preference": True,
+    }
+
+    # 2 - take a step back and a short step with same preferences
+    req = method.iterate(req)
+    print("\nStep number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+    req.response = {
+        "step_back": True,
+        "short_step": True,
+        "use_previous_preference": True,
+    }
+
+    # 3 - change the number of iterations lower and continue with same preferences
+    req = method.iterate(req)
+    print("\nStep number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+    req.response = {
+        "n_iterations": 5,
+        "step_back": False,
+        "use_previous_preference": True,
+    }
+
+    """
+    # 4 - take a step back and provide new preferences
+    req = method.iterate(req)
+    print("\nStep number: ", method._step_number)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+    req.response = {
+        "step_back": True,
+        "short_step": False,
+        "use_previous_preference": False,
+        "preference_method": 2,
+        "preference_info": np.array([30, 70]),
+    }
+
+    # 5. continue with the same preferences
+    while method._n_iterations_left > 1:
+        req = method.iterate(req)
+        print("\nStep number: ", method._step_number)
+        print("Iteration point: ", req.content["current_iteration_point"])
+        print("Closeness to Pareto optimal front", req.content["distance"])
+        req.response = {"step_back": False,
+                        "use_previous_preference": True
+                        }
+
+    print("\nEnd of solution process")
+    req = method.iterate(req)
+    print(req.content)
+    """
