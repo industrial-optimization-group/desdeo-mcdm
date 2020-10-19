@@ -400,12 +400,12 @@ class Nautilus(InteractiveMethod):
         self._n_iterations_left: int = self._n_iterations
 
         # set up arrays for storing information from obtained solutions, function values, distances, and bounds
-        self._xs = [None] * (self._n_iterations + 1)
-        self._fs = [None] * (self._n_iterations + 1)
-        self._ds = [None] * (self._n_iterations + 1)
-        self._zs = [None] * (self._n_iterations + 1)
-        self._lower_bounds = [None] * (self._n_iterations + 1)
-        self._upper_bounds = [None] * (self._n_iterations + 1)
+        self._xs = [None] * (self._n_iterations + 2)
+        self._fs = [None] * (self._n_iterations + 2)
+        self._ds = [None] * (self._n_iterations + 2)
+        self._zs = [None] * (self._n_iterations + 2)
+        self._lower_bounds = [None] * (self._n_iterations + 2)
+        self._upper_bounds = [None] * (self._n_iterations + 2)
 
         # set initial iteration point
         self._zs[self._step_number - 1] = self._nadir
@@ -424,8 +424,8 @@ class Nautilus(InteractiveMethod):
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
-        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[
-            0]  # is this the proper way to access values?
+        # is this the proper way to access values?
+        self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
         # calculate next iteration point
         self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
@@ -467,16 +467,40 @@ class Nautilus(InteractiveMethod):
             self._n_iterations_left = 0
             return NautilusStopRequest(self._xs[self._step_number], self._fs[self._step_number])
 
-        # use same preference and don't step back
-        if resp["use_previous_preference"] and not resp["step_back"]:
+        # don't step back...
+        if not resp["step_back"]:
             self._step_back = False
             self._n_iterations_left -= 1
             self._step_number += 1
 
-            # use the solution and objective of last step
-            self._xs[self._step_number] = self._xs[self._step_number - 1]
-            self._fs[self._step_number] = self._fs[self._step_number - 1]
+            # ... and continue with same preferences
+            if resp["use_previous_preference"]:
+                # use the solution and objective of last step
+                self._xs[self._step_number] = self._xs[self._step_number - 1]
+                self._fs[self._step_number] = self._fs[self._step_number - 1]
 
+            # ... and give new preferences
+            else:
+                # step 1
+                # set preference information
+                self._preference_method: int = resp["preference_method"]
+                self._preference_info: np.ndarray = resp["preference_info"]
+                self._preference_factors = self.calculate_preference_factors(self._preference_method,
+                                                                             self._preference_info,
+                                                                             self._nadir, self._utopian)
+
+                # set reference point, initial values for decision variables and solve the problem
+                self._q = self._zs[self._step_number - 1]
+                x0 = self._problem.get_variable_upper_bounds() / 2
+                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
+                                        self._objectives,
+                                        self._variable_bounds, method=None)
+
+                # update current solution and objective function values
+                self._xs[self._step_number] = result["x"]
+                self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
+
+            # continue from step 3
             # calculate next iteration point
             self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
                                                                          self._zs[self._step_number - 1],
@@ -502,11 +526,11 @@ class Nautilus(InteractiveMethod):
                 self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
             )
 
-        # take a step back
+        # take a step back...
         if resp["step_back"]:
             self._step_back = True
 
-            # take a short step
+            # ... and take a short step
             if resp["short_step"]:
                 self._short_step = True
                 self._zs[self._step_number] = 0.5 * self._zs[self._step_number] + 0.5 * self._zs[self._step_number - 1]
@@ -531,7 +555,7 @@ class Nautilus(InteractiveMethod):
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
-            # use new preferences
+            # ... and use new preferences
             elif not resp["use_previous_preference"]:
 
                 # set preference information
@@ -653,7 +677,7 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        return ((itn - 1) / itn) * z_prev + (1 / itn) * f_current
+        return (((itn - 1) / itn) * z_prev) + ((1 / itn) * f_current)
 
     def calculate_bounds(self, objectives: Callable, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
                          bounds: Union[np.ndarray, None], constraints: Optional[Callable],
@@ -711,6 +735,8 @@ class Nautilus(InteractiveMethod):
 
 # testing the method
 if __name__ == "__main__":
+
+    # Cake problem
     """
     # variables
     var_names = ["r", "h"]  # Make sure that the variable names are meaningful to you.
@@ -843,24 +869,28 @@ if __name__ == "__main__":
     """
 
 
-    # Define another test problem
+    # Define another test problem, problem from the article
 
     # Objectives
     def f1(xs):
+        xs = np.atleast_2d(xs)
         return -4.07 - 2.27 * xs[:, 0]
 
 
     def f2(xs):
+        xs = np.atleast_2d(xs)
         return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - \
                (0.01 / (1.39 - (xs[:, 0] ** 2))) - \
                (0.3 / (1.39 - (xs[:, 1] ** 2)))
 
 
     def f3(xs):
+        xs = np.atleast_2d(xs)
         return -8.21 + (0.71 / (1.09 - (xs[:, 0] ** 2)))
 
 
     def f4(xs):
+        xs = np.atleast_2d(xs)
         return -0.96 + (0.96 / (1.09 - (xs[:, 1] ** 2)))
 
 
@@ -876,7 +906,8 @@ if __name__ == "__main__":
     # variables
     var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
 
-    initial_values = [0.5, 0.5]
+    initial_values = np.array([0.5, 0.6])
+    print(f3(initial_values))  # oikein
     lower_bounds = [0.3, 0.3]
     upper_bounds = [1.0, 1.0]
     bounds = np.stack((lower_bounds, upper_bounds))
@@ -898,26 +929,19 @@ if __name__ == "__main__":
     req = method.start()
 
     # initial preferences
-    n_iterations = 5
+    n_iterations = 3
     req.response = {
         "n_iterations": n_iterations,
         "preference_method": 1,
         "preference_info": np.array([2, 2, 1, 1]),
     }
 
-    # TODO: Continue with this test problem, an error with Epsilon constraint function, something to do with the
-    # fact that no constraints, I think
-    """
-    epsilons = np.array([-2.83, -0.32, 9.71])
-    eps = EpsilonConstraintMethod(objectives, 0, epsilons, constraints=None)
-    eps_constraints = eps.evaluate_constraints([0.5, 0.5])
-    print(eps_constraints)
-    """
-
     # 1 - continue with same preferences
     req = method.iterate(req)
     print("Step number: ", method._step_number)
     print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._step_number])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
     req.response = {
@@ -926,34 +950,48 @@ if __name__ == "__main__":
         "use_previous_preference": True,
     }
 
-    # 2 - take a step back and a short step with same preferences
+    # 2 - take a step back and give new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
     print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._step_number])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
+
     req.response = {
         "step_back": True,
-        "short_step": True,
-        "use_previous_preference": True,
+        "short_step": False,
+        "use_previous_preference": False,
+        "preference_method": 1,
+        "preference_info": np.array([2, 3, 1, 4]),
     }
 
-    # 3 - change the number of iterations lower and continue with same preferences
+    # 3 - give new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
     print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._step_number])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
+
+
     req.response = {
-        "n_iterations": 5,
         "step_back": False,
-        "use_previous_preference": True,
+        "use_previous_preference": False,
+        "preference_method": 1,
+        "preference_info": np.array([1, 2, 1, 2]),
     }
 
-    """
+    
     # 4 - take a step back and provide new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
     print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._step_number])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
+
+    """
     req.response = {
         "step_back": True,
         "short_step": False,
@@ -967,6 +1005,8 @@ if __name__ == "__main__":
         req = method.iterate(req)
         print("\nStep number: ", method._step_number)
         print("Iteration point: ", req.content["current_iteration_point"])
+        print("Pareto optimal vector: ", method._fs[method._step_number])
+        print("Lower bounds of objectives: ", req.content["lower_bounds"])
         print("Closeness to Pareto optimal front", req.content["distance"])
         req.response = {"step_back": False,
                         "use_previous_preference": True
