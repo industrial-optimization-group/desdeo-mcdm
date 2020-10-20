@@ -13,6 +13,9 @@ from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
+from scipy.optimize import minimize
+import ad
+
 """
 Epsilon constraint method
 """
@@ -347,12 +350,12 @@ class Nautilus(InteractiveMethod):
         self._step_number = 1
 
         # iteration points
-        self._zs = []
+        self._zs: np.ndarray = []
 
         # solutions, objectives, and distances for each iteration
-        self._xs: List[np.ndarray] = []
-        self._fs: List[np.ndarray] = []
-        self._ds: List[np.ndarray] = []
+        self._xs: np.ndarray = []
+        self._fs: np.ndarray = []
+        self._ds: np.ndarray = []
 
         # The current reference point
         self._q: Union[None, np.ndarray] = None
@@ -400,7 +403,7 @@ class Nautilus(InteractiveMethod):
         self._n_iterations_left: int = self._n_iterations
 
         # set up arrays for storing information from obtained solutions, function values, distances, and bounds
-        self._xs = [None] * (self._n_iterations + 2)
+        self._xs = [None]* (self._n_iterations + 2)
         self._fs = [None] * (self._n_iterations + 2)
         self._ds = [None] * (self._n_iterations + 2)
         self._zs = [None] * (self._n_iterations + 2)
@@ -419,6 +422,7 @@ class Nautilus(InteractiveMethod):
         # set reference point, initial values for decision variables and solve the problem
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
+        x0 = [0.3, 0.4]
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=None)
 
@@ -426,6 +430,7 @@ class Nautilus(InteractiveMethod):
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
+
         # is this the proper way to access values?
         self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
@@ -582,7 +587,7 @@ class Nautilus(InteractiveMethod):
                 x0 = self._problem.get_variable_upper_bounds() / 2
                 result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
                                         self._objectives,
-                                        self._variable_bounds, method=None)
+                                        self._variable_bounds, method="scipy_de")
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
@@ -673,6 +678,7 @@ class Nautilus(InteractiveMethod):
             scalarizer_args={"reference_point": ref_point})
 
         # minimize
+        #minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method="scipy_de")
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
 
@@ -880,6 +886,7 @@ if __name__ == "__main__":
     print(req.content)
     """
 
+    ###########################################################
 
     # Define another test problem, problem from the article
 
@@ -918,8 +925,7 @@ if __name__ == "__main__":
     # variables
     var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
 
-    initial_values = np.array([0.5, 0.6])
-    print(f3(initial_values))  # oikein
+    initial_values = np.array([0.5, 0.5])
     lower_bounds = [0.3, 0.3]
     upper_bounds = [1.0, 1.0]
     bounds = np.stack((lower_bounds, upper_bounds))
@@ -928,11 +934,55 @@ if __name__ == "__main__":
     # problem
     prob = MOProblem(objectives=[obj1, obj2, obj3, obj4], variables=variables)  # objectives "seperately"
 
-    # ideal and nadir
-    ideal = np.array([-6.34, -3.44, -7.50, 0.00])
-    nadir = np.array([-4.07, -2.83, -0.32, 9.71])
+    # calculate ideal, nadir
+    def test_prob(xs):
+        return [
+            f1(xs), f2(xs), f3(xs), f4(xs)
+        ]
+
+    # ideal
+    def calc_ideal(f):
+        ideal = [0] * 4  # Because four objectives
+        solutions = []  # list for storing the actual solutions, which give the ideal
+        bounds = ((0.3, 1), (0.3, 1))  # Bounds of the problem
+        starting_point = np.array([0.8, 0.5])
+        for i in range(4):
+            res = minimize(
+                # Minimize each objective at the time
+                lambda x: f(x)[i], starting_point, method='SLSQP'
+                # Jacobian using automatic differentiation
+                , jac=ad.gh(lambda x: f(x)[i])[0]
+                # bounds given above
+                , bounds=bounds
+                , options={'disp': True, 'ftol': 1e-20, 'maxiter': 1000})
+            solutions.append(f(res.x))
+            ideal[i] = res.fun
+        return ideal, solutions
+
+    ideal, solutions = calc_ideal(test_prob)
+
+    # nadir
+    nadir = []
+    for i in range(4):
+        maksimi = -np.inf
+        for solution in solutions:
+            if solution[i] > maksimi:
+                maksimi = solution[i]
+        nadir.append(maksimi)
+
+    # from article
+    art_ideal = np.array([-6.34, -3.44, -7.50, 0.00])
+    art_nadir = np.array([-4.07, -2.83, -0.32, 9.71])
+
+    # calculated above
+    ideal = np.array(ideal).squeeze(axis=1)
+    nadir = np.array(nadir).squeeze(axis=1)
     print("Ideal: ", ideal)
     print("Nadir: ", nadir)
+
+    print("\n==========================\nDifferences compared to article's ones:\n")
+    print("Difference, ideal:", ideal-art_ideal)
+    print("Difference, nadir:", nadir-art_nadir)
 
     # start solving
     method = Nautilus(prob, ideal, nadir)
@@ -956,6 +1006,7 @@ if __name__ == "__main__":
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
+    """
     req.response = {
         "step_back": False,
         "short_step": False,
@@ -971,7 +1022,7 @@ if __name__ == "__main__":
     print("Closeness to Pareto optimal front", req.content["distance"])
 
     req.response = {
-       # "n_iterations": 10,
+        "n_iterations": 10,
         "step_back": True,
         "short_step": False,
         "use_previous_preference": False,
@@ -993,7 +1044,7 @@ if __name__ == "__main__":
         "preference_method": 1,
         "preference_info": np.array([1, 2, 1, 2]),
     }
-
+    
     # 4 - take a step back and provide new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
@@ -1002,7 +1053,7 @@ if __name__ == "__main__":
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
-    """
+    
     req.response = {
         "step_back": True,
         "short_step": False,
