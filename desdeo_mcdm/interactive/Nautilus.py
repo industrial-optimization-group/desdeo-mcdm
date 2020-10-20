@@ -422,6 +422,8 @@ class Nautilus(InteractiveMethod):
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=None)
 
+        # TODO: Continue here, solution differs from example problem's one.
+
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
         # is this the proper way to access values?
@@ -459,8 +461,18 @@ class Nautilus(InteractiveMethod):
 
         # change the number of iterations
         if "n_iterations" in resp:
-            self._n_iterations = resp["n_iterations"]
-            self._n_iterations_left = self._n_iterations
+
+            # "expand" the numpy arrays used for storing information from iteration rounds
+            if resp["n_iterations"] > self._n_iterations:
+                extra_space = [None] * (resp["n_iterations"] - self._n_iterations)
+                self._zs = np.array(np.concatenate((self._zs, extra_space), axis=None), dtype=object)
+                self._xs = np.array(np.concatenate((self._xs, extra_space), axis=None), dtype=object)
+                self._fs = np.array(np.concatenate((self._fs, extra_space), axis=None), dtype=object)
+                self._ds = np.array(np.concatenate((self._ds, extra_space), axis=None), dtype=object)
+                self._lower_bounds = np.array(np.concatenate((self._lower_bounds, extra_space), axis=None), dtype=object)
+                self._upper_bounds = np.array(np.concatenate((self._upper_bounds, extra_space), axis=None), dtype=object)
+
+            self._n_iterations_left = resp["n_iterations"]
 
         # last iteration, stop solution process
         if self._n_iterations_left <= 1:
@@ -959,6 +971,7 @@ if __name__ == "__main__":
     print("Closeness to Pareto optimal front", req.content["distance"])
 
     req.response = {
+       # "n_iterations": 10,
         "step_back": True,
         "short_step": False,
         "use_previous_preference": False,
@@ -974,7 +987,6 @@ if __name__ == "__main__":
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
-
     req.response = {
         "step_back": False,
         "use_previous_preference": False,
@@ -982,7 +994,6 @@ if __name__ == "__main__":
         "preference_info": np.array([1, 2, 1, 2]),
     }
 
-    
     # 4 - take a step back and provide new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
