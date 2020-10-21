@@ -13,7 +13,7 @@ from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
-from scipy.optimize import minimize
+from scipy.optimize import minimize, differential_evolution
 import ad
 
 """
@@ -422,7 +422,7 @@ class Nautilus(InteractiveMethod):
         # set reference point, initial values for decision variables and solve the problem
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
-        x0 = [0.3, 0.4]
+        x0 = [0.5, 0.5]
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=None)
 
@@ -431,7 +431,12 @@ class Nautilus(InteractiveMethod):
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
 
+        # Giovannin päätösmuuttujat: [0.97164281 0.97165501]
+
         # is this the proper way to access values?
+        f1 = self._objectives([0.97164281, 0.97165501])[0]  # evaluate functions with decision variables above.
+        print("With Giovanni's solution, value of f1: ", f1)
+        print("With 'own' solution: ", self._objectives(self._xs[self._step_number])[0])
         self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
         # calculate next iteration point
@@ -677,9 +682,24 @@ class Nautilus(InteractiveMethod):
             asf,
             scalarizer_args={"reference_point": ref_point})
 
+        # evolutionary
+        metodi = ScalarMethod(
+                lambda x, _, **y: differential_evolution(x, **y),
+                method_args={"polish": True, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+                use_scipy=True
+                )
+
+        # slsqp
+        """
+        metodi = ScalarMethod(
+            minimize, 
+            use_scipy=True, 
+            method_args={"options": {"disp": True, "eps": 1e-10, "ftol": 1e-5}, "method": "SLSQP"}
+        )
+        """
+
         # minimize
-        #minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method="scipy_de")
-        minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
+        minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=metodi)
         return minimizer.minimize(x0)
 
     def calculate_iteration_point(self, itn: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
@@ -912,7 +932,25 @@ if __name__ == "__main__":
         xs = np.atleast_2d(xs)
         return -0.96 + (0.96 / (1.09 - (xs[:, 1] ** 2)))
 
+    # define again to make sure no typos
+    """
+    def f1(xs):
+        xs = np.atleast_2d(xs)
+        return -4.07 - 2.27*xs[:,0]
 
+    def f2(xs):
+        xs = np.atleast_2d(xs)
+        return -2.60 - 0.03*xs[:,0] - 0.02*xs[:,1] - (0.01 / (1.39 - xs[:,0]**2)) - (0.30 / (1.39 - xs[:,1]**2))
+
+    def f3(xs):
+        xs = np.atleast_2d(xs)
+        return -8.21 + (0.71 / (1.09 - xs[:,0]**2))
+
+    def f4(xs):
+        xs = np.atleast_2d(xs)
+        return -0.96 + (0.96 / (1.09 - xs[:,1]**2))
+    
+    """
     def objectives(xs):
         return np.stack((f1(xs), f2(xs), f3(xs), f4(xs))).T
 
@@ -921,6 +959,8 @@ if __name__ == "__main__":
     obj2 = _ScalarObjective("obj2", f2)
     obj3 = _ScalarObjective("obj3", f3)
     obj4 = _ScalarObjective("obj4", f4)
+
+    objkaikki = VectorObjective("obj", objectives)
 
     # variables
     var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
@@ -945,7 +985,7 @@ if __name__ == "__main__":
         ideal = [0] * 4  # Because four objectives
         solutions = []  # list for storing the actual solutions, which give the ideal
         bounds = ((0.3, 1), (0.3, 1))  # Bounds of the problem
-        starting_point = np.array([0.8, 0.5])
+        starting_point = np.array([0.5, 0.5])
         for i in range(4):
             res = minimize(
                 # Minimize each objective at the time
@@ -954,7 +994,8 @@ if __name__ == "__main__":
                 , jac=ad.gh(lambda x: f(x)[i])[0]
                 # bounds given above
                 , bounds=bounds
-                , options={'disp': True, 'ftol': 1e-20, 'maxiter': 1000})
+                , options={'disp': True, 'ftol': 1e-10, 'eps': 1e-10, 'maxiter': 1000})
+
             solutions.append(f(res.x))
             ideal[i] = res.fun
         return ideal, solutions
@@ -985,13 +1026,13 @@ if __name__ == "__main__":
     print("Difference, nadir:", nadir-art_nadir)
 
     # start solving
-    method = Nautilus(prob, ideal, nadir)
+    method = Nautilus(problem=prob, ideal=ideal, nadir=nadir)
 
     print("Let's start solving\n")
     req = method.start()
 
     # initial preferences
-    n_iterations = 3
+    n_iterations = 5
     req.response = {
         "n_iterations": n_iterations,
         "preference_method": 1,
