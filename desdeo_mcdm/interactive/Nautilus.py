@@ -98,9 +98,11 @@ class EpsilonConstraintMethod:
 NAUTILUS
 """
 
-
-# TODO: Add validation for step back; cannot step back if the iteration point is the the nadir point
-def validate_response(n_objectives: int, response: Dict, first_iteration_bool: bool) -> None:
+def validate_response(n_objectives: int,
+                      z_current: np.ndarray,
+                      nadir: np.ndarray,
+                      response: Dict,
+                      first_iteration_bool: bool) -> None:
     """
     Validate decision maker's response.
 
@@ -119,7 +121,11 @@ def validate_response(n_objectives: int, response: Dict, first_iteration_bool: b
             raise NautilusException("Cannot use previous preferences on first iteration.")
         validate_preferences(n_objectives, response)
     else:
-        if not response["use_previous_preference"]:  # if dm wants to provide new preference info
+        # if current iteration point is nadir point
+        if response["step_back"] and np.array_equal(z_current, nadir):
+            raise NautilusException("Cannot take more steps back, current iteration point is the nadir point.")
+        # if dm wants to provide new preference info
+        if not response["use_previous_preference"]:
             validate_preferences(n_objectives, response)
     if "n_iterations" in response:  # both for providing initial and new numbers of iterations.
         validate_n_iterations(response["n_iterations"])
@@ -212,7 +218,7 @@ class NautilusInitialRequest(BaseRequest):
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
-        validate_response(self.n_objectives, response, first_iteration_bool=True)
+        validate_response(self.n_objectives, z_current=nadir, nadir=nadir, response=response, first_iteration_bool=True)
         self._response = response
 
 
@@ -224,11 +230,14 @@ class NautilusRequest(BaseRequest):
     def __init__(
             self,
             z_current: np.ndarray,
+            nadir: np.ndarray,
             lower_bounds: np.ndarray,
             upper_bounds: np.ndarray,
             distance: np.ndarray,
     ):
-        self.n_objectives = len(ideal)
+        self._n_objectives = len(ideal)
+        self._z_current = z_current
+        self._nadir = nadir
 
         msg = (
             "In case you wish to change the number of remaining iterations, please specify the number as "
@@ -260,7 +269,7 @@ class NautilusRequest(BaseRequest):
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
-        validate_response(self.n_objectives, response, first_iteration_bool=False)
+        validate_response(self._n_objectives, self._z_current, self._nadir, response, first_iteration_bool=False)
         self._response = response
 
 
@@ -333,6 +342,7 @@ class Nautilus(InteractiveMethod):
         self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
         self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
+
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
         self._ideal = ideal
@@ -436,8 +446,6 @@ class Nautilus(InteractiveMethod):
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=self._metodi)
 
-        # TODO: Continue here, solution differs from example problem's one.
-
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
 
@@ -468,7 +476,7 @@ class Nautilus(InteractiveMethod):
 
         # return the information from iteration round to be shown to the DM.
         return NautilusRequest(
-            self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
+            self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
             self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
         )
 
@@ -554,7 +562,7 @@ class Nautilus(InteractiveMethod):
 
             # return the information from iteration round to be shown to the DM.
             return NautilusRequest(
-                self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
+                self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
                 self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
             )
 
@@ -583,7 +591,7 @@ class Nautilus(InteractiveMethod):
 
                 # return the information from iteration round to be shown to the DM.
                 return NautilusRequest(
-                    self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
+                    self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
@@ -628,7 +636,7 @@ class Nautilus(InteractiveMethod):
 
                 # return the information from iteration round to be shown to the DM.
                 return NautilusRequest(
-                    self._zs[self._step_number], self._lower_bounds[self._step_number + 1],
+                    self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
@@ -750,7 +758,8 @@ class Nautilus(InteractiveMethod):
                                           constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
-            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=method)
+            # TODO: use evolutionary method to solve
+            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=None)
             res = minimizer.minimize(x0)
 
             # store objective function values as new lower bounds
