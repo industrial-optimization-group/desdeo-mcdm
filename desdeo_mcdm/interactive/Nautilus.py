@@ -303,7 +303,7 @@ class Nautilus(InteractiveMethod):
             problem: MOProblem,
             ideal: np.ndarray,
             nadir: np.ndarray,
-            epsilon: float = 0.0,
+            epsilon: float = 1e-6,
             objective_names: Optional[List[str]] = None,
             minimize: Optional[List[int]] = None,  # is this needed, if information is included in defining objectives?
     ):
@@ -333,7 +333,6 @@ class Nautilus(InteractiveMethod):
         self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
         self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
         self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
-
         # Used to calculate the utopian point from the ideal point
         self._epsilon = epsilon
         self._ideal = ideal
@@ -375,6 +374,13 @@ class Nautilus(InteractiveMethod):
         self._step_back: bool = False
         self._short_step: bool = False
         self._first_iteration: bool = True
+
+        # optimization method used throughout the Nautilus-algorithm (in ASF and e-contraint methods.)
+        self._metodi = ScalarMethod(
+                lambda x, _, **y: differential_evolution(x, **y),
+                method_args={"polish": True, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+                use_scipy=True
+                )
 
     def start(self) -> NautilusInitialRequest:
         return NautilusInitialRequest.init_with_method(self)
@@ -419,12 +425,16 @@ class Nautilus(InteractiveMethod):
         self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
                                                                      self._nadir, self._utopian)
 
-        # set reference point, initial values for decision variables and solve the problem
+        # set reference point, initial values for decision variables, lower and upper bounds for objective functions
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
-        x0 = [0.5, 0.5]
+
+        self._lower_bounds[self._step_number] = self._ideal
+        self._upper_bounds[self._step_number] = self._nadir
+
+        # solve the ASF-problem
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
-                                self._variable_bounds, method=None)
+                                self._variable_bounds, method=self._metodi)
 
         # TODO: Continue here, solution differs from example problem's one.
 
@@ -434,9 +444,9 @@ class Nautilus(InteractiveMethod):
         # Giovannin päätösmuuttujat: [0.97164281 0.97165501]
 
         # is this the proper way to access values?
-        f1 = self._objectives([0.97164281, 0.97165501])[0]  # evaluate functions with decision variables above.
-        print("With Giovanni's solution, value of f1: ", f1)
-        print("With 'own' solution: ", self._objectives(self._xs[self._step_number])[0])
+        # f1 = self._objectives([0.97164281, 0.97165501])[0]  # evaluate functions with decision variables above.
+        # print("With Giovanni's solution, value of f1: ", f1)
+        #print("With 'own' solution: ", self._objectives(result["x"])[0])
         self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
         # calculate next iteration point
@@ -516,7 +526,7 @@ class Nautilus(InteractiveMethod):
                 x0 = self._problem.get_variable_upper_bounds() / 2
                 result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
                                         self._objectives,
-                                        self._variable_bounds, method=None)
+                                        self._variable_bounds, method=self._metodi)
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
@@ -592,7 +602,7 @@ class Nautilus(InteractiveMethod):
                 x0 = self._problem.get_variable_upper_bounds() / 2
                 result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
                                         self._objectives,
-                                        self._variable_bounds, method="scipy_de")
+                                        self._variable_bounds, method=self._metodi)
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
@@ -650,7 +660,7 @@ class Nautilus(InteractiveMethod):
                   preference_factors: np.ndarray,
                   nadir: np.ndarray,
                   utopian: np.ndarray,
-                  objectives: np.ndarray,
+                  objectives: Callable,
                   variable_bounds: Optional[np.ndarray],
                   method: Union[ScalarMethod, str, None]
                   ) -> dict:
@@ -676,30 +686,24 @@ class Nautilus(InteractiveMethod):
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF(preference_factors, nadir, utopian)
+        asf = ReferencePointASF(preference_factors, nadir, utopian, rho=1e-6)
         asf_scalarizer = Scalarizer(
-            objectives,
-            asf,
+            evaluator=objectives,
+            scalarizer=asf,
             scalarizer_args={"reference_point": ref_point})
 
-        # evolutionary
-        metodi = ScalarMethod(
-                lambda x, _, **y: differential_evolution(x, **y),
-                method_args={"polish": True, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-                use_scipy=True
-                )
-
-        # slsqp
         """
+        # slsqp
+
         metodi = ScalarMethod(
             minimize, 
             use_scipy=True, 
-            method_args={"options": {"disp": True, "eps": 1e-10, "ftol": 1e-5}, "method": "SLSQP"}
+            method_args={"options": {"disp": True, "eps": 1e-10, "ftol": 1e-5, "maxiter": 5000}, "method": "SLSQP"}
         )
-        """
 
+        """
         # minimize
-        minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=metodi)
+        minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
 
     def calculate_iteration_point(self, itn: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
@@ -1032,7 +1036,7 @@ if __name__ == "__main__":
     req = method.start()
 
     # initial preferences
-    n_iterations = 5
+    n_iterations = 3
     req.response = {
         "n_iterations": n_iterations,
         "preference_method": 1,
@@ -1045,9 +1049,10 @@ if __name__ == "__main__":
     print("Iteration point: ", req.content["current_iteration_point"])
     print("Pareto optimal vector: ", method._fs[method._step_number])
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
+    #print("Upper bounds of objectives:", req.content["upper_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
-    """
+
     req.response = {
         "step_back": False,
         "short_step": False,
@@ -1063,7 +1068,6 @@ if __name__ == "__main__":
     print("Closeness to Pareto optimal front", req.content["distance"])
 
     req.response = {
-        "n_iterations": 10,
         "step_back": True,
         "short_step": False,
         "use_previous_preference": False,
@@ -1085,7 +1089,7 @@ if __name__ == "__main__":
         "preference_method": 1,
         "preference_info": np.array([1, 2, 1, 2]),
     }
-    
+
     # 4 - take a step back and provide new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
@@ -1094,7 +1098,7 @@ if __name__ == "__main__":
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
-    
+    """
     req.response = {
         "step_back": True,
         "short_step": False,
