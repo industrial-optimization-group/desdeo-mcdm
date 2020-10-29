@@ -365,7 +365,17 @@ class NautilusStopRequest(BaseRequest):
 
 class Nautilus(InteractiveMethod):
     """
-    Implements the basic NAUTILUS methods as presented in `Miettinen 2010`
+    Implements the basic NAUTILUS method as presented in `Miettinen 2010`__.
+
+    In NAUTILUS, starting from the nadir point,
+    a solution is obtained at each iteration which dominates the previous one.
+    Although only the last solution will be Pareto optimal, the decision maker never looses sight of the
+    Pareto optimal set, and the search is oriented so that (s)he progressively focusses on the preferred part of
+    the Pareto optimal set. Each new solution is obtained by minimizing an achievement scalarizing function including
+    preferences about desired improvements in objective function values.
+
+    NAUTILUS is specially suitable for avoiding  undesired anchoring effects, for example in negotiation support
+    problems, or just as a means of finding an initial Pareto optimal solution for any interactive procedure.
 
     Args:
         problem (MOProblem): Problem to be solved.

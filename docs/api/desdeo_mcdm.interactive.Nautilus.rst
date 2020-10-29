@@ -31,3 +31,6 @@ Nautilus
    .. automethod:: iterate
    .. automethod:: solve_asf
    .. automethod:: start
+
+   .. _article: https://www.sciencedirect.com/science/article/pii/S0377221710001785
+   __ article_
