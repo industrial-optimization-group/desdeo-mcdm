@@ -130,5 +130,6 @@ dmypy.json
 
 # other
 .vscode
+.idea
 
 sandbox.py

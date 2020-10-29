@@ -108,8 +108,13 @@ def validate_response(n_objectives: int,
 
     Args:
         n_objectives (int): Number of objectives.
+        z_current (np.ndarray): Current iteration point.
+        nadir (np.ndarray): Nadir point.
         response (Dict) : Decision maker's response containing preference information.
         first_iteration_bool (bool) : Indicating whether the iteration round is the first one (True) or not (False).
+
+    Raises:
+        NautilusException: In case Decision maker's response is not valid.
     """
 
     if first_iteration_bool:
@@ -134,6 +139,14 @@ def validate_response(n_objectives: int,
 def validate_preferences(n_objectives: int, response: Dict) -> None:
     """
     Validate decision maker's preferences.
+
+    Args:
+        n_objectives (int): Number of objectives in problem.
+        response (Dict): Decision maker's response containing preference information.
+
+    Raises:
+        NautilusException: In case preference info is not valid.
+
     """
 
     if "preference_method" not in response:
@@ -171,7 +184,15 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
 def validate_n_iterations(n_it: int) -> None:
     """
     Validate decision maker's preference for number of iterations.
+
+    Args:
+        n_it (int): Number of iterations.
+
+    Raises:
+        NautilusException: If number of iterations given is not an positive integer greater than zero.
+
     """
+
     if not isinstance(n_it, int) or int(n_it) < 1:
         msg = (
             "The given number of iterations left "
@@ -181,19 +202,28 @@ def validate_n_iterations(n_it: int) -> None:
 
 
 class NautilusException(Exception):
-    """Raised when an exception related to Nautilus is encountered.
-
+    """
+    Raised when an exception related to Nautilus is encountered.
     """
 
     pass
 
 
 class NautilusInitialRequest(BaseRequest):
-    """ A request class to handle the initial preferences.
-
+    """
+    A request class to handle the initial preferences.
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
+        """
+        Initialize with ideal and nadir vectors.
+
+        Args:
+            ideal (np.ndarray): Ideal vector.
+            nadir (np.ndarray): Nadir vector.
+
+        """
+
         self.n_objectives = len(ideal)
         msg = (
             "Please specify the number of iterations as 'n_iterations' to be carried out.\n"
@@ -213,18 +243,37 @@ class NautilusInitialRequest(BaseRequest):
         super().__init__("reference_point_preference", "required", content=content)
 
     @classmethod
-    def init_with_method(cls, method):
+    def init_with_method(cls, method: InteractiveMethod):
+        """
+        Initialize request with given instance of Nautilus method.
+
+        Args:
+            method (Nautilus): Instance of Nautilus-class.
+
+        Returns:
+            NautilusInitialRequest: Initial request.
+
+        """
+
         return cls(method._ideal, method._nadir)
 
     @BaseRequest.response.setter
-    def response(self, response: Dict):
+    def response(self, response: Dict) -> None:
+        """
+        Set Decision maker's response information for initial request.
+
+        Args:
+            response (Dict): Decision maker's response.
+
+        """
+
         validate_response(self.n_objectives, z_current=nadir, nadir=nadir, response=response, first_iteration_bool=True)
         self._response = response
 
 
 class NautilusRequest(BaseRequest):
-    """A request class to handle the intermediate requests.
-
+    """
+    A request class to handle the intermediate requests.
     """
 
     def __init__(
@@ -235,6 +284,18 @@ class NautilusRequest(BaseRequest):
             upper_bounds: np.ndarray,
             distance: np.ndarray,
     ):
+        """
+        Initialize request with current iterations's solution process information.
+
+        Args:
+            z_current (np.ndarray): Current iteration point.
+            nadir (np.ndarray): Nadir point.
+            lower_bounds (np.ndarray): Lower bounds for objective functions for next iteration.
+            upper_bounds (np.ndarray): Upper bounds for objective functions for next iteration.
+            distance (np.ndarray): Closeness to Pareto optimal front.
+
+        """
+
         self._n_objectives = len(ideal)
         self._z_current = z_current
         self._nadir = nadir
@@ -268,17 +329,34 @@ class NautilusRequest(BaseRequest):
         super().__init__("reference_point_preference", "required", content=content)
 
     @BaseRequest.response.setter
-    def response(self, response: Dict):
+    def response(self, response: Dict) -> None:
+        """
+        Set Decision maker's response information for request.
+
+        Args:
+            response (Dict): Decision maker's response.
+
+        """
+
         validate_response(self._n_objectives, self._z_current, self._nadir, response, first_iteration_bool=False)
         self._response = response
 
 
 class NautilusStopRequest(BaseRequest):
-    """A request class to handle termination.
-
+    """
+    A request class to handle termination.
     """
 
-    def __init__(self, x_h: np.ndarray, f_h: np.ndarray):
+    def __init__(self, x_h: np.ndarray, f_h: np.ndarray) -> None:
+        """
+        Initialize termination request with final solution and objective vector.
+
+        Args:
+            x_h (np.ndarray): Solution (decision variables).
+            f_h (np.ndarray): Objective vector.
+
+        """
+
         msg = "Final solution found."
         content = {"message": msg, "solution": x_h, "objective vector": f_h}
 
@@ -289,23 +367,20 @@ class Nautilus(InteractiveMethod):
     """
     Implements the basic NAUTILUS methods as presented in `Miettinen 2010`
 
-        Args:
-            problem (MOProblem): Problem to be solved.
-            ideal (np.ndarray): The ideal objective vector of the problem
-            being represented by the Pareto front.
-            nadir (np.ndarray): The nadir objective vector of the problem
-            being represented by the Pareto front.
-            epsilon (float): A small number used in calculating the utopian point.
-            objective_names (Optional[List[str]], optional): Names of the
-            objectives. List must match the number of columns in
-            minimize (Optional[List[int]], optional): Multipliers for each
-            objective. '-1' indicates maximization and '1' minimization.
-            Defaults to all objective values being minimized.
+    Args:
+        problem (MOProblem): Problem to be solved.
+        ideal (np.ndarray): The ideal objective vector of the problem being represented by the Pareto front.
+        nadir (np.ndarray): The nadir objective vector of the problem being represented by the Pareto front.
+        epsilon (float): A small number used in calculating the utopian point.
+        objective_names (Optional[List[str]], optional): Names of the objectives. List must match the number of columns
+                                                         in ideal.
+        minimize (Optional[List[int]], optional): Multipliers for each objective. '-1' indicates maximization
+                                                  and '1' minimization. Defaults to all objective values being
+                                                  minimized.
 
-        Raises:
-            NautilusException: One or more dimension mismatches are
-            encountered among the supplies arguments.
-        """
+    Raises:
+        NautilusException: One or more dimension mismatches are encountered among the supplies arguments.
+    """
 
     def __init__(
             self,
@@ -314,7 +389,7 @@ class Nautilus(InteractiveMethod):
             nadir: np.ndarray,
             epsilon: float = 1e-6,
             objective_names: Optional[List[str]] = None,
-            minimize: Optional[List[int]] = None,  # is this needed, if information is included in defining objectives?
+            minimize: Optional[List[int]] = None,
     ):
 
         if not ideal.shape == nadir.shape:
@@ -393,14 +468,31 @@ class Nautilus(InteractiveMethod):
             )
 
     def start(self) -> NautilusInitialRequest:
+        """
+        Start the solution process with initializing the first request.
+
+        Returns:
+            NautilusInitialRequest: Initial request.
+
+        """
+
         return NautilusInitialRequest.init_with_method(self)
 
     def iterate(
-            self, request: Union[NautilusInitialRequest, NautilusRequest]
+            self, request: Union[NautilusInitialRequest, NautilusRequest, NautilusStopRequest]
     ) -> Union[NautilusRequest, NautilusStopRequest]:
-        """Perform the next logical iteration step based on the given request type.
+        """
+        Perform the next logical iteration step based on the given request type.
+
+        Args:
+            request (Union[NautilusInitialRequest, NautilusRequest]): Either initial or intermediate request.
+
+        Returns:
+            Union[NautilusRequest, NautilusStopRequest]: A new request with content depending on the Decision maker's
+            preferences.
 
         """
+
         if type(request) is NautilusInitialRequest:
             return self.handle_initial_request(request)
         elif type(request) is NautilusRequest:
@@ -410,7 +502,14 @@ class Nautilus(InteractiveMethod):
             return request
 
     def handle_initial_request(self, request: NautilusInitialRequest) -> NautilusRequest:
-        """Handles the initial request by parsing the response appropiately.
+        """
+        Handles the initial request by parsing the response appropiately.
+
+        Args:
+            request (NautilusInitialRequest): Initial request including Decision maker's initial preferences.
+
+        Returns:
+            NautilusRequest: New request with updated solution process information.
 
         """
 
@@ -474,7 +573,15 @@ class Nautilus(InteractiveMethod):
         )
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
-        """Handles the intermediate requests.
+        """
+        Handle Decision maker's intermediate requests.
+
+        Args:
+            request (NautilusRequest): Intermediate request including Decision maker's response.
+
+        Returns:
+            Union[NautilusRequest, NautilusStopRequest]: In case last iteration, request to stop the solution process.
+            Otherwise, new request with updated solution process information.
 
         """
 
@@ -646,7 +753,7 @@ class Nautilus(InteractiveMethod):
             utopian (np.ndarray): Utopian vector.
 
         Returns:
-            Weights assigned to each of the objective functions in achievement scalarizing function.
+            np.ndarray: Weights assigned to each of the objective functions in achievement scalarizing function.
         """
 
         if pref_method == 1:  # ranks
@@ -680,9 +787,10 @@ class Nautilus(InteractiveMethod):
                                                    as a 2D numpy array. If undefined variables, None instead.
             method (Union[ScalarMethod, str, None): The optimization method the scalarizer should be minimized with
 
-        Returns: Dict: A dictionary with at least the following entries: 'x' indicating the optimal
-                 variables found, 'fun' the optimal value of the optimized functoin, and 'success' a boolean
-                 indicating whether the optimizaton was conducted successfully.
+        Returns:
+            Dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
+            'fun' the optimal value of the optimized functoin, and 'success' a boolean indicating whether
+            the optimization was conducted successfully.
 
         """
 
@@ -699,6 +807,7 @@ class Nautilus(InteractiveMethod):
 
     def calculate_iteration_point(self, itn: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
+        Calculate next iteration point towards the Pareto optimal solution.
 
         Args:
             itn (int): Number of iterations left.
@@ -706,7 +815,7 @@ class Nautilus(InteractiveMethod):
             f_current (np.ndarray): Current optimal objective vector.
 
         Returns:
-            z_next (np.ndarray): Next iteration point.
+            np.ndarray: Next iteration point.
 
         """
 
@@ -717,6 +826,7 @@ class Nautilus(InteractiveMethod):
                          method: Union[ScalarMethod, str, None]) -> np.ndarray:
         """
         Calculate the new bounds using Epsilon constraint method.
+
         Args:
             objectives (np.ndarray): The objective function values for each input vector.
             n_objectives (int): Total number of objectives.
@@ -760,15 +870,17 @@ class Nautilus(InteractiveMethod):
     def calculate_distance(self, z_current: np.ndarray, nadir: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
         Calculates the distance from current iteration point to the Pareto optimal set.
+
         Args:
             z_current (np.ndarray): Current iteration point.
             nadir (np.ndarray): Nadir vector.
             f_current (np.ndarray): Current optimal objective vector.
 
         Returns:
-            (np.ndarray): Distance to the Pareto optimal set.
+            np.ndarray: Distance to the Pareto optimal set.
 
         """
+
         dist = (np.linalg.norm(np.atleast_2d(z_current) - nadir, ord=2, axis=1)) \
                / (np.linalg.norm(np.atleast_2d(f_current) - nadir, ord=2, axis=1))
         return dist * 100
