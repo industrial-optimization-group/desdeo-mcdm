@@ -471,7 +471,7 @@ class Nautilus(InteractiveMethod):
         self._first_iteration: bool = True
 
         # evolutionary method for minimizing
-        self._metodi: ScalarMethod = ScalarMethod(
+        self._method_de: ScalarMethod = ScalarMethod(
             lambda x, _, **y: differential_evolution(x, **y),
             method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
             use_scipy=True
@@ -553,7 +553,7 @@ class Nautilus(InteractiveMethod):
 
         # solve the ASF-problem
         result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
-                                self._variable_bounds, method=self._metodi)
+                                self._variable_bounds, method=self._method_de)
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
@@ -644,7 +644,7 @@ class Nautilus(InteractiveMethod):
                 x0 = self._problem.get_variable_upper_bounds() / 2
                 result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
                                         self._objectives,
-                                        self._variable_bounds, method=self._metodi)
+                                        self._variable_bounds, method=self._method_de)
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
@@ -720,7 +720,7 @@ class Nautilus(InteractiveMethod):
                 x0 = self._problem.get_variable_upper_bounds() / 2
                 result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
                                         self._objectives,
-                                        self._variable_bounds, method=self._metodi)
+                                        self._variable_bounds, method=self._method_de)
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
