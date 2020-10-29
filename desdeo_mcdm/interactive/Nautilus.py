@@ -386,9 +386,9 @@ class Nautilus(InteractiveMethod):
         self._first_iteration: bool = True
 
         # optimization method used throughout the Nautilus-algorithm (in ASF and e-contraint methods.)
-        self._metodi = ScalarMethod(
+        self._metodi: ScalarMethod = ScalarMethod(
                 lambda x, _, **y: differential_evolution(x, **y),
-                method_args={"polish": True, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+                method_args={"disp": False, "polish": True, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
                 use_scipy=True
                 )
 
@@ -700,16 +700,6 @@ class Nautilus(InteractiveMethod):
             scalarizer=asf,
             scalarizer_args={"reference_point": ref_point})
 
-        """
-        # slsqp
-
-        metodi = ScalarMethod(
-            minimize, 
-            use_scipy=True, 
-            method_args={"options": {"disp": True, "eps": 1e-10, "ftol": 1e-5, "maxiter": 5000}, "method": "SLSQP"}
-        )
-
-        """
         # minimize
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
@@ -749,6 +739,13 @@ class Nautilus(InteractiveMethod):
 
         new_lower_bounds: np.ndarray = [None] * n_objectives
 
+        # set polish to False
+        method_e: ScalarMethod = ScalarMethod(
+                lambda x, _, **y: differential_evolution(x, **y),
+                method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+                use_scipy=True
+                )
+
         # solve new lower bounds for each objective
         for i in range(n_objectives):
             eps = EpsilonConstraintMethod(objectives,
@@ -758,8 +755,8 @@ class Nautilus(InteractiveMethod):
                                           constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
-            # TODO: use evolutionary method to solve
-            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=None)
+
+            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=method_e)
             res = minimizer.minimize(x0)
 
             # store objective function values as new lower bounds
@@ -1009,6 +1006,7 @@ if __name__ == "__main__":
                 , bounds=bounds
                 , options={'disp': True, 'ftol': 1e-10, 'eps': 1e-10, 'maxiter': 1000})
 
+
             solutions.append(f(res.x))
             ideal[i] = res.fun
         return ideal, solutions
@@ -1051,10 +1049,13 @@ if __name__ == "__main__":
         "preference_method": 1,
         "preference_info": np.array([2, 2, 1, 1]),
     }
+    print("Step number: 0")
+    print("Iteration point: ", nadir)
+    print("Lower bounds of objectives: ", ideal)
 
     # 1 - continue with same preferences
     req = method.iterate(req)
-    print("Step number: ", method._step_number)
+    print("\nStep number: ", method._step_number)
     print("Iteration point: ", req.content["current_iteration_point"])
     print("Pareto optimal vector: ", method._fs[method._step_number])
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
