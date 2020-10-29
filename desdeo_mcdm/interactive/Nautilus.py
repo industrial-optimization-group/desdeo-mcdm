@@ -385,12 +385,12 @@ class Nautilus(InteractiveMethod):
         self._short_step: bool = False
         self._first_iteration: bool = True
 
-        # optimization method used throughout the Nautilus-algorithm (in ASF and e-contraint methods.)
+        # evolutionary method for minimizing
         self._metodi: ScalarMethod = ScalarMethod(
-                lambda x, _, **y: differential_evolution(x, **y),
-                method_args={"disp": False, "polish": True, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-                use_scipy=True
-                )
+            lambda x, _, **y: differential_evolution(x, **y),
+            method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+            use_scipy=True
+            )
 
     def start(self) -> NautilusInitialRequest:
         return NautilusInitialRequest.init_with_method(self)
@@ -448,13 +448,6 @@ class Nautilus(InteractiveMethod):
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
-
-        # Giovannin päätösmuuttujat: [0.97164281 0.97165501]
-
-        # is this the proper way to access values?
-        # f1 = self._objectives([0.97164281, 0.97165501])[0]  # evaluate functions with decision variables above.
-        # print("With Giovanni's solution, value of f1: ", f1)
-        #print("With 'own' solution: ", self._objectives(result["x"])[0])
         self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
         # calculate next iteration point
@@ -783,9 +776,9 @@ class Nautilus(InteractiveMethod):
 
 # testing the method
 if __name__ == "__main__":
-
-    # Cake problem
     """
+    # Cake problem
+
     # variables
     var_names = ["r", "h"]  # Make sure that the variable names are meaningful to you.
 
@@ -914,8 +907,10 @@ if __name__ == "__main__":
     print("\nEnd of solution process")
     req = method.iterate(req)
     print(req.content)
-    """
 
+
+
+    
     ###########################################################
 
     # Define another test problem, problem from the article
@@ -944,6 +939,7 @@ if __name__ == "__main__":
 
     # define again to make sure no typos
     """
+    
     def f1(xs):
         xs = np.atleast_2d(xs)
         return -4.07 - 2.27*xs[:,0]
@@ -960,7 +956,7 @@ if __name__ == "__main__":
         xs = np.atleast_2d(xs)
         return -0.96 + (0.96 / (1.09 - xs[:,1]**2))
     
-    """
+    
     def objectives(xs):
         return np.stack((f1(xs), f2(xs), f3(xs), f4(xs))).T
 
@@ -1099,7 +1095,7 @@ if __name__ == "__main__":
         "preference_method": 1,
         "preference_info": np.array([1, 2, 1, 2]),
     }
-
+    
     # 4 - take a step back and provide new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
@@ -1109,6 +1105,7 @@ if __name__ == "__main__":
     print("Closeness to Pareto optimal front", req.content["distance"])
 
     """
+
     req.response = {
         "step_back": True,
         "short_step": False,
@@ -1116,7 +1113,7 @@ if __name__ == "__main__":
         "preference_method": 2,
         "preference_info": np.array([30, 70]),
     }
-
+    
     # 5. continue with the same preferences
     while method._n_iterations_left > 1:
         req = method.iterate(req)
