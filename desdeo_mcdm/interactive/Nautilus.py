@@ -528,7 +528,7 @@ class Nautilus(InteractiveMethod):
         self._n_iterations_left: int = self._n_iterations
 
         # set up arrays for storing information from obtained solutions, function values, distances, and bounds
-        self._xs = [None]* (self._n_iterations + 2)
+        self._xs = [None] * (self._n_iterations + 2)
         self._fs = [None] * (self._n_iterations + 2)
         self._ds = [None] * (self._n_iterations + 2)
         self._zs = [None] * (self._n_iterations + 2)
@@ -565,7 +565,7 @@ class Nautilus(InteractiveMethod):
                                                                      self._fs[self._step_number])
         # calculate new bounds and store the information
         new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
-                                                 self._zs[self._step_number - 1], self._variable_bounds,
+                                                 self._zs[self._step_number], self._variable_bounds,
                                                  self._constraints, None)
 
         self._lower_bounds[self._step_number + 1] = new_lower_bounds
@@ -659,7 +659,7 @@ class Nautilus(InteractiveMethod):
             # calculate new bounds and store the information
             new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
                                                      self._problem.get_variable_upper_bounds() / 2,
-                                                     self._zs[self._step_number - 1], self._variable_bounds,
+                                                     self._zs[self._step_number], self._variable_bounds,
                                                      self._constraints, None)
 
             self._lower_bounds[self._step_number + 1] = new_lower_bounds
@@ -688,7 +688,7 @@ class Nautilus(InteractiveMethod):
                 # calculate new bounds and store the information
                 new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
                                                          self._problem.get_variable_upper_bounds() / 2,
-                                                         self._zs[self._step_number - 1], self._variable_bounds,
+                                                         self._zs[self._step_number], self._variable_bounds,
                                                          self._constraints, None)
 
                 self._lower_bounds[self._step_number + 1] = new_lower_bounds
@@ -733,7 +733,7 @@ class Nautilus(InteractiveMethod):
 
                 # calculate new bounds and store the information
                 new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
-                                                         self._zs[self._step_number - 1], self._variable_bounds,
+                                                         self._zs[self._step_number], self._variable_bounds,
                                                          self._constraints, None)
 
                 self._lower_bounds[self._step_number + 1] = new_lower_bounds
