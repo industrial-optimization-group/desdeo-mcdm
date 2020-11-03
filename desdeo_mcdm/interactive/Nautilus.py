@@ -225,6 +225,8 @@ class NautilusInitialRequest(BaseRequest):
         """
 
         self.n_objectives = len(ideal)
+        self._nadir = nadir
+
         msg = (
             "Please specify the number of iterations as 'n_iterations' to be carried out.\n"
             "Please specify as 'preference_method' whether to \n"
@@ -267,7 +269,7 @@ class NautilusInitialRequest(BaseRequest):
 
         """
 
-        validate_response(self.n_objectives, z_current=nadir, nadir=nadir, response=response, first_iteration_bool=True)
+        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
         self._response = response
 
 
@@ -296,7 +298,7 @@ class NautilusRequest(BaseRequest):
 
         """
 
-        self._n_objectives = len(ideal)
+        self._n_objectives = len(nadir)
         self._z_current = z_current
         self._nadir = nadir
 
@@ -1060,7 +1062,7 @@ if __name__ == "__main__":
         return -0.96 + (0.96 / (1.09 - (xs[:, 1] ** 2)))
 
     # define again to make sure no typos
-    """
+    
     
     def f1(xs):
         xs = np.atleast_2d(xs)
@@ -1226,7 +1228,7 @@ if __name__ == "__main__":
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
-    """
+    
 
     req.response = {
         "step_back": True,
