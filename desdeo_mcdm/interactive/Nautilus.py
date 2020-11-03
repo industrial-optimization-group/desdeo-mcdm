@@ -410,7 +410,7 @@ class Nautilus(InteractiveMethod):
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise NautilusException(
-                    "The supplied objective names must have a leangth equal to " "the numbr of objectives."
+                    "The supplied objective names must have a length equal to " "the numbr of objectives."
                 )
             self._objective_names = objective_names
         else:
@@ -1060,7 +1060,8 @@ if __name__ == "__main__":
     def f4(xs):
         xs = np.atleast_2d(xs)
         return -0.96 + (0.96 / (1.09 - (xs[:, 1] ** 2)))
-
+    
+    """
     # define again to make sure no typos
     
     
@@ -1227,8 +1228,8 @@ if __name__ == "__main__":
     print("Pareto optimal vector: ", method._fs[method._step_number])
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
+    """
 
-    
 
     req.response = {
         "step_back": True,
