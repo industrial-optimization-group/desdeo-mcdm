@@ -156,31 +156,22 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
         raise NautilusException("'preference_method entry missing")
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if response["preference_method"] not in [1, 2]:
-        raise NautilusException("please specify either preference method 1 (rank) or 2 (percentages).")
+    if response["preference_method"] not in [1, 2]:  # 3rd method not implemented atm
+        raise NautilusException("Please specify either preference method 1 (direct components)"
+                                " or 2 (improvement ratios).")
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if response["preference_method"] == 1:  # ranks
-        if len(response["preference_info"]) < n_objectives:
-            msg = "Number of ranks ({}) do not match the number of objectives '({})." \
-                .format(len(response["preference_info"]), n_objectives)
-            raise NautilusException(msg)
-        elif not (1 <= max(response["preference_info"]) <= n_objectives):
-            msg = "The minimum index of importance must be greater or equal "
-            "to 1 and the maximum index of improtance must be less "
-            "than or equal to the number of objectives in the "
-            "problem, which is {}. Check the indices {}" \
-                .format(n_objectives, response["preference_info"])
-            raise NautilusException(msg)
-    elif response["preference_method"] == 2:  # percentages
-        if len(response["preference_info"]) < n_objectives:
-            msg = "Number of given percentages ({}) do not match the number of objectives '({})." \
-                .format(len(response["preference_info"]), n_objectives)
-            raise NautilusException(msg)
-        elif np.sum(response["preference_info"]) != 100:
-            msg = (
-                "The sum of the percentages must be 100. Current sum" " is {}."
-            ).format(np.sum(response["preference_info"]))
+    if any(response["preference_info"] <= 0):
+        msg = "All 'preference_info' items must be greater than zero. Check the items {}".format(response["preference_info"])
+        raise NautilusException(msg)
+    if len(response["preference_info"]) < n_objectives:
+        msg = "Number of items in 'preference_info' ({}) do not match the number of objectives ({})." \
+            .format(len(response["preference_info"]), n_objectives)
+        raise NautilusException(msg)
+    if response["preference_method"] == 2:  # improvement ratios
+        if not any(response["preference_info"] == 1):
+            msg = "At least one of the improvement ratios '({})' must be 1; specify the other functions' improvement ratios in " \
+                  "relation to this 1.".format(response["preference_info"])
             raise NautilusException(msg)
 
 
@@ -233,11 +224,11 @@ class NautilusInitialRequest(BaseRequest):
         msg = (
             "Please specify the number of iterations as 'n_iterations' to be carried out.\n"
             "Please specify as 'preference_method' whether to \n"
-            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-            "values."
-            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
-            "each objective as 'preference_info'."
+            "1. Give directly components for direction of improvement.\n"
+            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
+            "and specify other objectives' improvement ratios in relatation to that."
+            "Depending on your selection on 'preference_method', please specify either the direct components or "
+            "improvement ratios for each objective as 'preference_info'."
         )
         content = {
             "message": msg,
@@ -317,11 +308,11 @@ class NautilusRequest(BaseRequest):
             "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
             "In case you chose to not to use preference information from previous iteration, \n"
             "Please specify as 'preference_method' whether to \n"
-            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-            "values."
-            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
-            "each objective as 'preference_info'."
+            "1. Give directly components for direction of improvement.\n"
+            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
+            "and specify other objectives' improvement ratios in relatation to that."
+            "Depending on your selection on 'preference_method', please specify either the direct components or "
+            "improvement ratios for each objective as 'preference_info'."
         )
         content = {
             "message": msg,
@@ -343,7 +334,7 @@ class NautilusRequest(BaseRequest):
 
         """
 
-        #validate_response(self._n_objectives, self._z_current, self._nadir, response, first_iteration_bool=False)
+        validate_response(self._n_objectives, self._z_current, self._nadir, response, first_iteration_bool=False)
         self._response = response
 
 
