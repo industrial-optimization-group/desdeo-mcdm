@@ -749,23 +749,18 @@ class NautilusV2(InteractiveMethod):
         Calculate preference factors based on decision maker's preference information.
 
         Args:
-            pref_method (int): Preference information method (either ranks (1) or percentages (2)).
+            pref_method (int): Preference information method (either components (1) or improvement ratios (2)).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
                                     function.
-            nadir (np.ndarray): Nadir vector.
-            utopian (np.ndarray): Utopian vector.
 
         Returns:
             np.ndarray: Weights assigned to each of the objective functions in achievement scalarizing function.
         """
 
-        if pref_method == 1:  # deltas directly
+        if pref_method in [1, 2]:  # deltas directly or improvement ratios
             return pref_info
 
-        # should deltas be calculated here or how?
-        elif pref_method == 2:  # improvement ratios
-            return pref_info
-        elif pref_method == 3:
+        elif pref_method == 3:  # third method not implemented atm
             return
 
 
