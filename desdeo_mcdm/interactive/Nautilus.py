@@ -469,7 +469,7 @@ class Nautilus(InteractiveMethod):
         self._n_iterations_left = None
 
         # flags for the iteration phase
-        # not needed atm, should utilize or not?
+        # not utilized atm
         self._use_previous_preference: bool = False
         self._step_back: bool = False
         self._short_step: bool = False
