@@ -381,8 +381,11 @@ class Nautilus(InteractiveMethod):
 
     Args:
         problem (MOProblem): Problem to be solved.
-        ideal (np.ndarray): The ideal objective vector of the problem being represented by the Pareto front.
-        nadir (np.ndarray): The nadir objective vector of the problem being represented by the Pareto front.
+        ideal (np.ndarray): The ideal objective vector of the problem.
+        nadir (np.ndarray): The nadir objective vector of the problem. This may also be the "worst" objective vector
+                            provided by the Decision maker if the approximation of Nadir vector is not applicable or if
+                            the Decision maker wishes to provide even worse objective vector than what the
+                            approximated Nadir vector is.
         epsilon (float): A small number used in calculating the utopian point.
         objective_names (Optional[List[str]], optional): Names of the objectives. List must match the number of columns
                                                          in ideal.
