@@ -154,25 +154,48 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
 
     if "preference_method" not in response:
         raise NautilusException("'preference_method entry missing")
+
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if response["preference_method"] not in [1, 2, 3]:  # 3rd method not implemented atm
+
+    if response["preference_method"] not in [1, 2, 3]:
         raise NautilusException("Please specify either preference method 1 (direct components)"
-                                " or 2 (improvement ratios).")
+                                ", 2 (improvement ratios), or 3 (pairs and improvement ratios).")
+
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if any(response["preference_info"] <= 0):
-        msg = "All 'preference_info' items must be greater than zero. Check the items {}".format(response["preference_info"])
-        raise NautilusException(msg)
-    if len(response["preference_info"]) < n_objectives:
-        msg = "Number of items in 'preference_info' ({}) do not match the number of objectives ({})." \
-            .format(len(response["preference_info"]), n_objectives)
-        raise NautilusException(msg)
+
+    if response["preference_method"] in [1, 2]:
+        if any(response["preference_info"] <= 0):
+            msg = "All 'preference_info' items must be greater than zero. Check the items {}".format(response["preference_info"])
+            raise NautilusException(msg)
+        if len(response["preference_info"]) < n_objectives:
+            msg = "Number of items in 'preference_info' ({}) do not match the number of objectives ({})." \
+                .format(len(response["preference_info"]), n_objectives)
+            raise NautilusException(msg)
+
     if response["preference_method"] == 2:  # improvement ratios
         if not any(response["preference_info"] == 1):
-            msg = "At least one of the improvement ratios '({})' must be 1; specify the other functions' improvement ratios in " \
-                  "relation to this 1.".format(response["preference_info"])
+            msg = "At least one of the improvement ratios '({})' must be 1; specify the other functions' improvement " \
+                  "ratios in relation to this 1.".format(response["preference_info"])
             raise NautilusException(msg)
+
+    if response["preference_method"] == 3:  # objective pairs and improvement ratios
+        if len(response["preference_info"]) != (n_objectives - 1):
+            msg = "Number of improvement ratios must be number of objectives - 1 ({}). The provided number was {}. " \
+                  "Please specify the objective " \
+                  "function pairs and corresponding improvement ratios again.".format(n_objectives - 1,
+                                                                                      len(response["preference_info"]))
+            raise NautilusException(msg)
+
+        for _, elem in enumerate(response["preference_info"]):
+            # TODO: Check that objective function indeces match the problem's ones.
+
+            if elem[1] <= 0:
+                msg = "All Improvement ratios must be greater than zero."
+                raise NautilusException(msg)
+
+
 
 
 def validate_n_iterations(n_it: int) -> None:
@@ -265,7 +288,7 @@ class NautilusInitialRequest(BaseRequest):
 
         """
 
-        #validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
+        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
         self._response = response
 
 
@@ -313,8 +336,11 @@ class NautilusRequest(BaseRequest):
             "1. Give directly components for direction of improvement.\n"
             "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
             "and specify other objectives' improvement ratios in relatation to that."
-            "Depending on your selection on 'preference_method', please specify either the direct components or "
-            "improvement ratios for each objective as 'preference_info'."
+            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this pair." 
+            "For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
+            "Depending on your selection on 'preference_method', please specify either the direct components, "
+            "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
+
         )
         content = {
             "message": msg,
@@ -770,9 +796,8 @@ class NautilusV2(InteractiveMethod):
         elif pref_method == 3:
             # initialize
             deltas = np.zeros(n_objectives)
-            deltas_set = np.zeros(n_objectives)
 
-            # direction of improvement for objective is set to 1.
+            # direction of improvement for objective 1 is set to 1.
             deltas[0] = 1
 
             # 1. starting search from pairs containing objective 1
@@ -791,7 +816,6 @@ class NautilusV2(InteractiveMethod):
                     deltas[elem[0][0] - 1] = delta_i
 
             # 2. if all deltas not set
-
             # indeces of objectives for which deltas are still missing
             missing = [ind + 1 for ind, elem in enumerate(deltas) if elem == 0]
 
@@ -804,24 +828,14 @@ class NautilusV2(InteractiveMethod):
                         # if objective is included in the pair
                         if elem[0][0] == m:
                             if deltas[elem[0][1] - 1] != 0:
-                                deltas[elem[0][0] - 1] = deltas[elem[0][1]] * elem[1]
+                                deltas[elem[0][0] - 1] = deltas[elem[0][1] - 1] * elem[1]
 
                         elif elem[0][1] == m:
                             if deltas[elem[0][0] - 1] != 0:
-                                deltas[elem[0][1] - 1] = deltas[elem[0][0]] * (1/elem[1])
+                                # TODO: Double check this 1 / value
+                                deltas[elem[0][1] - 1] = deltas[elem[0][0] - 1] * (1 / elem[1])
 
             return deltas
-
-
-
-
-
-
-
-
-
-
-
 
 
     def solve_asf(self,
@@ -1013,9 +1027,9 @@ if __name__ == "__main__":
     n_iterations = 3
     req.response = {
         "n_iterations": n_iterations,
-        "preference_method": 3,  # deltas directly
-        #"preference_info": np.array([2, 1, 1.5, 1]),
-        "preference_info": np.array([((1,2), 0.5), ((1,3), 1), ((2,4), 1.5)], dtype=object)
+        "preference_method": 3,  # pairs
+        # remember to specify "dtype=object" when using preference method 3.
+        "preference_info": np.array([((1,2), 0.5), ((2,3), 1), ((2,4), 1.5)], dtype=object)
     }
     print("Step number: 0")
     print("Iteration point: ", nadir)
