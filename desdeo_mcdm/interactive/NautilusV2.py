@@ -156,7 +156,7 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
         raise NautilusException("'preference_method entry missing")
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if response["preference_method"] not in [1, 2]:  # 3rd method not implemented atm
+    if response["preference_method"] not in [1, 2, 3]:  # 3rd method not implemented atm
         raise NautilusException("Please specify either preference method 1 (direct components)"
                                 " or 2 (improvement ratios).")
     if "preference_info" not in response:
@@ -227,8 +227,10 @@ class NautilusInitialRequest(BaseRequest):
             "1. Give directly components for direction of improvement.\n"
             "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
             "and specify other objectives' improvement ratios in relatation to that."
-            "Depending on your selection on 'preference_method', please specify either the direct components or "
-            "improvement ratios for each objective as 'preference_info'."
+            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this pair." 
+            "For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
+            "Depending on your selection on 'preference_method', please specify either the direct components, "
+            "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
         )
         content = {
             "message": msg,
@@ -263,7 +265,7 @@ class NautilusInitialRequest(BaseRequest):
 
         """
 
-        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
+        #validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
         self._response = response
 
 
@@ -538,7 +540,9 @@ class NautilusV2(InteractiveMethod):
         # set preference information
         self._preference_method: int = request.response["preference_method"]
         self._preference_info: np.ndarray = request.response["preference_info"]
-        self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info)
+        self._preference_factors = self.calculate_preference_factors(len(self._objective_names),
+                                                                     self._preference_method,
+                                                                     self._preference_info)
 
         # set reference point, initial values for decision variables, lower and upper bounds for objective functions
         self._q = self._zs[self._step_number - 1]
@@ -631,7 +635,8 @@ class NautilusV2(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(self._preference_method,
+                self._preference_factors = self.calculate_preference_factors(len(self._objective_names),
+                                                                             self._preference_method,
                                                                              self._preference_info)
 
                 # set reference point, initial values for decision variables and solve the problem
@@ -706,7 +711,8 @@ class NautilusV2(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(self._preference_method,
+                self._preference_factors = self.calculate_preference_factors(len(self._objective_names),
+                                                                             self._preference_method,
                                                                              self._preference_info)
 
                 # set reference point, initial values for decision variables and solve the problem
@@ -744,11 +750,12 @@ class NautilusV2(InteractiveMethod):
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
-    def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray) -> np.ndarray:
+    def calculate_preference_factors(self, n_objectives: int, pref_method: int, pref_info: np.ndarray) -> np.ndarray:
         """
         Calculate preference factors based on decision maker's preference information.
 
         Args:
+            n_objectives (int): Number of objectives in problem.
             pref_method (int): Preference information method (either components (1) or improvement ratios (2)).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
                                     function.
@@ -760,8 +767,61 @@ class NautilusV2(InteractiveMethod):
         if pref_method in [1, 2]:  # deltas directly or improvement ratios
             return pref_info
 
-        elif pref_method == 3:  # third method not implemented atm
-            return
+        elif pref_method == 3:
+            # initialize
+            deltas = np.zeros(n_objectives)
+            deltas_set = np.zeros(n_objectives)
+
+            # direction of improvement for objective is set to 1.
+            deltas[0] = 1
+
+            # 1. starting search from pairs containing objective 1
+            for ind, elem in enumerate(pref_info):
+
+                if elem[0][0] == 1:
+                    # delta for objective i
+                    delta_i = elem[1]
+
+                    # set delta for objective i, minus 1 because objective indeces start at 1, but deltas are stored
+                    # starting from index 0.
+                    deltas[elem[0][1] - 1] = delta_i
+
+                elif elem[0][1] == 1:
+                    delta_i = 1/elem[1]
+                    deltas[elem[0][0] - 1] = delta_i
+
+            # 2. if all deltas not set
+
+            # indeces of objectives for which deltas are still missing
+            missing = [ind + 1 for ind, elem in enumerate(deltas) if elem == 0]
+
+            while (0 in deltas):
+
+                # go through the missing objectives
+                for m in missing:
+                    for ind, elem in enumerate(pref_info):
+
+                        # if objective is included in the pair
+                        if elem[0][0] == m:
+                            if deltas[elem[0][1] - 1] != 0:
+                                deltas[elem[0][0] - 1] = deltas[elem[0][1]] * elem[1]
+
+                        elif elem[0][1] == m:
+                            if deltas[elem[0][0] - 1] != 0:
+                                deltas[elem[0][1] - 1] = deltas[elem[0][0]] * (1/elem[1])
+
+            return deltas
+
+
+
+
+
+
+
+
+
+
+
 
 
     def solve_asf(self,
@@ -953,8 +1013,9 @@ if __name__ == "__main__":
     n_iterations = 3
     req.response = {
         "n_iterations": n_iterations,
-        "preference_method": 1,  # deltas directly
-        "preference_info": np.array([2, 1, 1.5, 1]),
+        "preference_method": 3,  # deltas directly
+        #"preference_info": np.array([2, 1, 1.5, 1]),
+        "preference_info": np.array([((1,2), 0.5), ((1,3), 1), ((2,4), 1.5)], dtype=object)
     }
     print("Step number: 0")
     print("Iteration point: ", nadir)
