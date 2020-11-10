@@ -480,7 +480,7 @@ class Nautilus(InteractiveMethod):
             lambda x, _, **y: differential_evolution(x, **y),
             method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
             use_scipy=True
-            )
+            )   
 
     def start(self) -> NautilusInitialRequest:
         """
