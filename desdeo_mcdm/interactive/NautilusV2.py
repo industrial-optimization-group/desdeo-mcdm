@@ -420,7 +420,23 @@ class NautilusV2(InteractiveMethod):
     """
     Implements the NAUTILUS 2 method as presented in `Miettinen 2015`__.
 
-    # TODO: method description
+    Similarly to NAUTILUS, starting from the nadir point,
+    a solution is obtained at each iteration which dominates the previous one.
+    Although only the last solution will be Pareto optimal, the decision maker never looses sight of the
+    Pareto optimal set, and the search is oriented so that (s)he progressively focusses on the preferred part of
+    the Pareto optimal set. Each new solution is obtained by minimizing an achievement scalarizing function including
+    preferences about desired improvements in objective function values.
+
+    NAUTILUS 2 introduces a new preference handeling technique which is easily understandable for the DM and allows
+    the DM to conveniently control the solution process. Preferences are given as direction of improvement for
+    objectives. In NAUTILUS 2, the DM has three ways to do this:
+    1. the DM sets the direction of improvement directly.
+    2. the DM defines the improvement ratio between two different objectives fi and fj.
+       For example, if the DM wishes that the improvement of fi by one unit should be accompanied with the improvement
+       of fj by θij units. Here, the DM selects an objective fi (i=1,…,k) and for each of the other objectives fj
+       sets the value θij. Then, the direction of improvement is defined by δi=1 and δj=θij, j≠i.
+    3. As a generalization of the approach 2, the DM sets values of improvement ratios freely for some selected pairs of
+       objective functions.
 
     Args:
         problem (MOProblem): Problem to be solved.
@@ -814,58 +830,86 @@ class NautilusV2(InteractiveMethod):
             pref_method (int): Preference information method (either components (1) or improvement ratios (2)).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
                                     function.
+                                    The Decision maker has three ways to do this:
+                                    1. the DM sets the direction of improvement directly.
+                                       Example input could be: np.array([0.3, 0.5, 0.4, 2]), if n_objectives == 4.
+                                    2. the DM defines the improvement ratio between two different objectives fi and fj.
+                                       For example, if the DM wishes that the improvement of fi by one unit should be
+                                       accompanied with the improvement of fj by θij units. Here, the DM selects an
+                                       objective fi (i=1,…,k) and for each of the other objectives fj sets the value
+                                       θij. Then, the direction of improvement is defined by δi=1 and δj=θij, j≠i.
+                                       Example input could be: np.array([1, 1.5, 0.5, (2/7]), if n_objectives == 4.
+                                    3. As a generalization of the approach 2, the DM sets values of improvement ratios
+                                       freely for some selected pairs of objective functions.
+                                       Example input could be: np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)],
+                                                               dtype=object)
+                                       Remember to specify "dtype=object" when using preference method 3.
 
         Returns:
-            np.ndarray: Weights assigned to each of the objective functions in achievement scalarizing function.
+            np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in
+                        achievement scalarizing function.
         """
 
         if pref_method in [1, 2]:  # deltas directly or improvement ratios
             return pref_info
 
         elif pref_method == 3:
-            # initialize
-            deltas = np.zeros(n_objectives)
+            return self.calculate_doi(n_objectives, pref_info)
 
-            # direction of improvement for objective 1 is set to 1.
-            deltas[0] = 1
+    def calculate_doi(self, n_objectives: int, pref_info: np.ndarray) -> np.ndarray:
+        """
+        Calculate direction of improvement based on improvement ratios between pairs of objective functions.
 
-            # 1. starting search from pairs containing objective 1
-            for ind, elem in enumerate(pref_info):
+        Args:
+            n_objectives (int): Number of objectives.
+            pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
+                                    function.
 
-                if elem[0][0] == 1:
-                    # delta for objective i
-                    delta_i = elem[1]
+        Returns: np.ndarray: Direction of improvement.
 
-                    # set delta for objective i, minus 1 because objective indeces start at 1, but deltas are stored
-                    # starting from index 0.
-                    deltas[elem[0][1] - 1] = delta_i
+        """
 
-                elif elem[0][1] == 1:
-                    delta_i = 1/elem[1]
-                    deltas[elem[0][0] - 1] = delta_i
+        # initialize
+        deltas = np.zeros(n_objectives)
 
-            # 2. if all deltas not set
-            # indeces of objectives for which deltas are still missing
-            missing = [ind + 1 for ind, elem in enumerate(deltas) if elem == 0]
+        # direction of improvement for objective 1 is set to 1.
+        deltas[0] = 1
 
-            while (0 in deltas):
+        # 1. starting search from pairs containing objective 1
+        for ind, elem in enumerate(pref_info):
 
-                # go through the missing objectives
-                for m in missing:
-                    for ind, elem in enumerate(pref_info):
+            if elem[0][0] == 1:
+                # delta for objective i
+                delta_i = elem[1]
 
-                        # if objective is included in the pair
-                        if elem[0][0] == m:
-                            if deltas[elem[0][1] - 1] != 0:
-                                deltas[elem[0][0] - 1] = deltas[elem[0][1] - 1] * elem[1]
+                # set delta for objective i, minus 1 because objective indeces start at 1, but deltas are stored
+                # starting from index 0.
+                deltas[elem[0][1] - 1] = delta_i
 
-                        elif elem[0][1] == m:
-                            if deltas[elem[0][0] - 1] != 0:
-                                # TODO: Double check this 1 / value
-                                deltas[elem[0][1] - 1] = deltas[elem[0][0] - 1] * (1 / elem[1])
+            elif elem[0][1] == 1:
+                delta_i = 1 / elem[1]
+                deltas[elem[0][0] - 1] = delta_i
 
-            return deltas
+        # 2. if all deltas not set
+        # indeces of objectives for which deltas are still missing
+        missing = [ind + 1 for ind, elem in enumerate(deltas) if elem == 0]
 
+        while (0 in deltas):
+
+            # go through the missing objectives
+            for m in missing:
+                for ind, elem in enumerate(pref_info):
+
+                    # if objective is included in the pair
+                    if elem[0][0] == m:
+                        if deltas[elem[0][1] - 1] != 0:
+                            deltas[elem[0][0] - 1] = deltas[elem[0][1] - 1] * (1 / elem[1])
+
+                    elif elem[0][1] == m:
+                        if deltas[elem[0][0] - 1] != 0:
+                            deltas[elem[0][1] - 1] = deltas[elem[0][0] - 1] * elem[1]
+
+        return deltas
 
     def solve_asf(self,
                   ref_point: np.ndarray,
@@ -1058,7 +1102,7 @@ if __name__ == "__main__":
         "n_iterations": n_iterations,
         "preference_method": 3,  # pairs
         # remember to specify "dtype=object" when using preference method 3.
-        "preference_info": np.array([((1,2), 0.5), ((2,3), 1), ((2,4), 1.5)], dtype=object)
+        "preference_info": np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)], dtype=object)
     }
     print("Step number: 0")
     print("Iteration point: ", nadir)
