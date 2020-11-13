@@ -181,6 +181,10 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
             raise NautilusException(msg)
 
     if response["preference_method"] == 3:  # objective pairs and improvement ratios
+
+        # for checking that all objectives are included
+        obj_mask = [False]*n_objectives
+
         if len(response["preference_info"]) != (n_objectives - 1):
             msg = "Number of improvement ratios must be number of objectives - 1 ({}). The provided number was {}. " \
                   "Please specify the objective " \
@@ -188,14 +192,39 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
                                                                                       len(response["preference_info"]))
             raise NautilusException(msg)
 
-        for _, elem in enumerate(response["preference_info"]):
-            # TODO: Check that objective function indeces match the problem's ones.
+        for elem in response["preference_info"]:
+        
+            for obj in elem[0]:
+                if not isinstance(obj, int) or int(obj) <= 0:
+                    msg = "All objective function indeces must be a positive integer number. Given indeces ratios: {}.". \
+                        format([elem[0] for elem in response["preference_info"]])
+                    raise NautilusException(msg)
 
-            if elem[1] <= 0:
-                msg = "All Improvement ratios must be greater than zero."
+                # if index matches any of the problem's indeces
+                match = [(i + 1) == obj for i in range(n_objectives)]
+
+                if not any(match):
+                    msg = "Range of objective function indeces '{}' must match the problem's number of objectives '{}'." \
+                        .format([elem[[0][0]] for elem in response["preference_info"]], n_objectives)
+                    raise NautilusException(msg)
+
+                # objective is included in pairs
+                obj_mask[obj - 1] = True
+
+            if not isinstance(elem[1], int) and not isinstance(elem[1], float):
+                msg = "All improvement ratios must be a integer of float number. Given improvement ratios: {}.".\
+                    format([elem[1] for elem in response["preference_info"]])
                 raise NautilusException(msg)
 
+            if float(elem[1]) <= 0:
+                msg = "All improvement ratios must a positive number greater than zero. Given improvement ratios: {}.". \
+                    format([elem[1] for elem in response["preference_info"]])
+                raise NautilusException(msg)
 
+        if not all(obj_mask):
+            msg = "Pairs for improvement ratios must include all objective functions. Given pairs: '{}'." \
+                .format([elem[0] for elem in response["preference_info"]])
+            raise NautilusException(msg)
 
 
 def validate_n_iterations(n_it: int) -> None:
@@ -206,7 +235,7 @@ def validate_n_iterations(n_it: int) -> None:
         n_it (int): Number of iterations.
 
     Raises:
-        NautilusException: If number of iterations given is not an positive integer greater than zero.
+        NautilusException: If number of iterations given is not a positive integer greater than zero.
 
     """
 
@@ -1048,8 +1077,8 @@ if __name__ == "__main__":
         "step_back": False,
         "short_step": False,
         "use_previous_preference": False,
-        "preference_method": 1,  # deltas directly
-        "preference_info": np.array([3, 2, 1.5, 1]),
+        "preference_method": 3,  # deltas directly
+        "preference_info": np.array([((1,3), 0.5), ((2,4), 1), ((2,3), (2/3))], dtype=object),
 
     }
 
