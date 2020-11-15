@@ -127,21 +127,21 @@ def validate_response(n_objectives: int,
             raise NautilusException("Cannot take a step back on first iteration.")
         if "use_previous_preference" in response:
             raise NautilusException("Cannot use previous preferences on first iteration.")
-        validate_preferences(n_objectives, response)
+        validate_n2_preferences(n_objectives, response)
     else:
         # if current iteration point is nadir point
         if response["step_back"] and np.array_equal(z_current, nadir):
             raise NautilusException("Cannot take more steps back, current iteration point is the nadir point.")
         # if dm wants to provide new preference info
         if not response["use_previous_preference"]:
-            validate_preferences(n_objectives, response)
+            validate_n2_preferences(n_objectives, response)
     if "n_iterations" in response:  # both for providing initial and new numbers of iterations.
         validate_n_iterations(response["n_iterations"])
 
 
-def validate_preferences(n_objectives: int, response: Dict) -> None:
+def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
     """
-    Validate decision maker's preferences.
+    Validate decision maker's preferences in NAUTILUS 2.
 
     Args:
         n_objectives (int): Number of objectives in problem.
@@ -430,11 +430,16 @@ class NautilusV2(InteractiveMethod):
     NAUTILUS 2 introduces a new preference handeling technique which is easily understandable for the DM and allows
     the DM to conveniently control the solution process. Preferences are given as direction of improvement for
     objectives. In NAUTILUS 2, the DM has three ways to do this:
-    1. the DM sets the direction of improvement directly.
-    2. the DM defines the improvement ratio between two different objectives fi and fj.
+
+    1. The DM sets the direction of improvement directly.
+
+    2. The DM defines the improvement ratio between two different objectives fi and fj.
        For example, if the DM wishes that the improvement of fi by one unit should be accompanied with the improvement
        of fj by θij units. Here, the DM selects an objective fi (i=1,…,k) and for each of the other objectives fj
-       sets the value θij. Then, the direction of improvement is defined by δi=1 and δj=θij, j≠i.
+       sets the value θij. Then, the direction of improvement is defined by
+
+            ``δi=1 and δj=θij, j≠i.``
+
     3. As a generalization of the approach 2, the DM sets values of improvement ratios freely for some selected pairs of
        objective functions.
 
@@ -831,18 +836,31 @@ class NautilusV2(InteractiveMethod):
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
                                     function.
                                     The Decision maker has three ways to do this:
-                                    1. the DM sets the direction of improvement directly.
-                                       Example input could be: np.array([0.3, 0.5, 0.4, 2]), if n_objectives == 4.
-                                    2. the DM defines the improvement ratio between two different objectives fi and fj.
+
+                                    1. The DM sets the direction of improvement directly.
+                                       Example input could be:
+
+                                            ``np.array([0.3, 0.5, 0.4, 2])``, if n_objectives == 4.
+
+                                    2. The DM defines the improvement ratio between two different objectives fi and fj.
                                        For example, if the DM wishes that the improvement of fi by one unit should be
                                        accompanied with the improvement of fj by θij units. Here, the DM selects an
                                        objective fi (i=1,…,k) and for each of the other objectives fj sets the value
-                                       θij. Then, the direction of improvement is defined by δi=1 and δj=θij, j≠i.
-                                       Example input could be: np.array([1, 1.5, 0.5, (2/7]), if n_objectives == 4.
+                                       θij. Then, the direction of improvement is defined by
+
+                                            ``δi=1 and δj=θij, j≠i.``
+
+                                       Example input could be:
+
+                                            ``np.array([1, 1.5, 0.5, (2/7)])``, if n_objectives == 4.
+
                                     3. As a generalization of the approach 2, the DM sets values of improvement ratios
                                        freely for some selected pairs of objective functions.
-                                       Example input could be: np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)],
-                                                               dtype=object)
+                                       Example input could be:
+
+                                            ``np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)], dtype=object)``, if
+                                            n_objectives == 4.
+
                                        Remember to specify "dtype=object" when using preference method 3.
 
         Returns:

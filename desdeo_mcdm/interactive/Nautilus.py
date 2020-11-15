@@ -14,7 +14,7 @@ from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
 from scipy.optimize import minimize, differential_evolution
-import ad
+#import ad
 
 """
 Epsilon constraint method
@@ -124,21 +124,21 @@ def validate_response(n_objectives: int,
             raise NautilusException("Cannot take a step back on first iteration.")
         if "use_previous_preference" in response:
             raise NautilusException("Cannot use previous preferences on first iteration.")
-        validate_preferences(n_objectives, response)
+        validate_n1_preferences(n_objectives, response)
     else:
         # if current iteration point is nadir point
         if response["step_back"] and np.array_equal(z_current, nadir):
             raise NautilusException("Cannot take more steps back, current iteration point is the nadir point.")
         # if dm wants to provide new preference info
         if not response["use_previous_preference"]:
-            validate_preferences(n_objectives, response)
+            validate_n1_preferences(n_objectives, response)
     if "n_iterations" in response:  # both for providing initial and new numbers of iterations.
         validate_n_iterations(response["n_iterations"])
 
 
-def validate_preferences(n_objectives: int, response: Dict) -> None:
+def validate_n1_preferences(n_objectives: int, response: Dict) -> None:
     """
-    Validate decision maker's preferences.
+    Validate decision maker's preferences in NAUTILUS 1.
 
     Args:
         n_objectives (int): Number of objectives in problem.
