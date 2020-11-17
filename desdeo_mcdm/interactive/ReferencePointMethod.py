@@ -1,7 +1,9 @@
 from typing import Dict, List, Optional, Union, Callable
 
 import numpy as np
+from desdeo_problem.Objective import _ScalarObjective, VectorObjective
 from desdeo_problem.Problem import MOProblem
+from desdeo_problem.Variable import variable_builder
 
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
@@ -178,6 +180,7 @@ class ReferencePointMethod(InteractiveMethod):
             starting_point: np.ndarray,
             ideal: np.ndarray,
             nadir: np.ndarray,
+            epsilon: float = 1e-4,
             objective_names: Optional[List[str]] = None,
             minimize: Optional[List[int]] = None,
     ):
@@ -216,21 +219,27 @@ class ReferencePointMethod(InteractiveMethod):
 
         self._ideal = ideal
         self._nadir = nadir
+        self._utopian = ideal - epsilon
         self._starting_point = starting_point
-        self._n_objectives = []
+        self._n_objectives = self._ideal.shape[0]
 
         # current iteration step number
         self._h = 1
 
-        # solutions, objectives, and distances for each iteration
-        self._xs: np.ndarray = np.zeros(self._problem.n_of_variables)
-        self._fh: np.ndarray = np.zeros(self._n_objectives)
-        self._dh: float = 100.0
+        # solutions, objectives, distances and iteration points for each iteration
+        self._xs = [None] * 10
+        self._fs = [None] * 10
+        self._ds = [None] * 10
+        self._zs = [None] * 10
 
-        # The current reference point
+        # perturbed reference points
+        self._pqs = [None] * 10
+
+        # current reference point
         self._q: Union[None, np.ndarray] = None
 
-        # TODO: Continue here.
+        # weighting vector for achievement function
+        self._w: np.ndarray = []
 
         # evolutionary method for minimizing
         self._method_de: ScalarMethod = ScalarMethod(
@@ -278,14 +287,62 @@ class ReferencePointMethod(InteractiveMethod):
             RPMRequest: New request with updated solution process information.
         """
 
-        # set initial reference point
-        self._q = self._starting_point
+        # set initial iteration point
+        self._zs[self._h - 1] = self._starting_point
 
+        # set reference point
+        self._q = self._zs[self._h - 1]
+
+        # set weighting vector
+        self._w = self._q / (self._utopian - self._nadir)
+
+        # set initial values for decision variables
         x0 = self._problem.get_variable_upper_bounds() / 2
 
         # solve the ASF-problem
-        result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._ideal, self._objectives,
+        result = self.solve_asf(self._q, x0, self._w, self._nadir, self._ideal, self._objectives,
                                 self._variable_bounds, method=self._method_de)
+
+        # update current solution and objective function values
+        self._xs[self._h] = result["x"]
+        self._fs[self._h] = self._objectives(self._xs[self._h])[0]
+
+        # calculate perturbed reference points
+        self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
+
+        # calculate a number of n_objectives other solutions
+        res = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
+                              self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
+
+        # TODO: Continue from here, store perturbed results to array, present to DM.
+
+        p = 2
+
+    def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray):
+        """
+        Calculate perturbed reference points.
+
+        Args:
+            ref_point (np.ndarray): Current reference point
+            f_current (np.ndarray): Current solution.
+
+        Returns:
+            np.ndarray: Perturbed reference points
+        """
+
+        # distance
+        d = np.linalg.norm(np.atleast_2d(ref_point - f_current))
+
+        # unit vectors
+        ei = np.array([np.zeros(len(ref_point))])
+        es = np.repeat(ei, len(ref_point), axis=0)
+
+        for i, j in enumerate(es):
+            for ind, _ in enumerate(j):
+                if ind == i:
+                    j[ind] = 1
+
+        return ref_point + (d * es)
 
     def handle_request(self, request: RPMRequest) -> Union[RPMRequest, RPMStopRequest]:
         """
@@ -369,3 +426,135 @@ class ReferencePointMethod(InteractiveMethod):
         dist = (np.linalg.norm(np.atleast_2d(z_current) - starting_point, ord=2, axis=1)) \
                / (np.linalg.norm(np.atleast_2d(f_current) - starting_point, ord=2, axis=1))
         return dist * 100
+
+
+# testing the method
+if __name__ == "__main__":
+    print("Reference point method")
+
+
+    # Objectives
+    def f1(xs):
+        xs = np.atleast_2d(xs)
+        return -4.07 - 2.27 * xs[:, 0]
+
+
+    def f2(xs):
+        xs = np.atleast_2d(xs)
+        return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (
+                    0.30 / (1.39 - xs[:, 1] ** 2))
+
+
+    def f3(xs):
+        xs = np.atleast_2d(xs)
+        return -8.21 + (0.71 / (1.09 - xs[:, 0] ** 2))
+
+
+    def f4(xs):
+        xs = np.atleast_2d(xs)
+        return -0.96 + (0.96 / (1.09 - xs[:, 1] ** 2))
+
+
+    def objectives(xs):
+        return np.stack((f1(xs), f2(xs), f3(xs), f4(xs))).T
+
+
+    obj1 = _ScalarObjective("obj1", f1)
+    obj2 = _ScalarObjective("obj2", f2)
+    obj3 = _ScalarObjective("obj3", f3)
+    obj4 = _ScalarObjective("obj4", f4)
+
+    objkaikki = VectorObjective("obj", objectives)
+
+    # variables
+    var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
+
+    initial_values = np.array([0.5, 0.5])
+    lower_bounds = [0.3, 0.3]
+    upper_bounds = [1.0, 1.0]
+    bounds = np.stack((lower_bounds, upper_bounds))
+    variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
+
+    # problem
+    prob = MOProblem(objectives=[obj1, obj2, obj3, obj4], variables=variables)  # objectives "seperately"
+
+    # solved in Nautilus.py
+    ideal = np.array([-6.34, -3.44487179, -7.5, 0])
+    nadir = np.array([-4.751, -2.86054116, -0.32111111, 9.70666666])
+
+    # starting point
+    z0 = np.array(([-4.07, -2.82, -3, 4]))
+
+    # start solving
+    method = ReferencePointMethod(problem=prob, starting_point=z0, ideal=ideal, nadir=nadir)
+
+    print("Let's start solving\n")
+    req = method.start()
+
+    # initial preferences
+    n_iterations = 3
+    req.response = {
+        "n_iterations": n_iterations,
+        "preference_method": 3,  # pairs
+        # remember to specify "dtype=object" when using preference method 3.
+        "preference_info": np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
+    }
+    print("Step number: 0")
+    print("Iteration point: ", nadir)
+    print("Lower bounds of objectives: ", ideal)
+
+    # 1 - continue with same preferences
+    req = method.iterate(req)
+    print("\nStep number: ", method._h)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._h])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
+    # print("Upper bounds of objectives:", req.content["upper_bounds"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+
+    req.response = {
+        "step_back": False,
+        "short_step": False,
+        "use_previous_preference": False,
+        "preference_method": 3,  # deltas directly
+        "preference_info": np.array([((1, 3), 0.5), ((2, 4), 1), ((2, 3), (2 / 3))], dtype=object),
+
+    }
+
+    # 2 - take a step back and give new preferences
+    req = method.iterate(req)
+    print("\nStep number: ", method._h)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._h])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+
+    req.response = {
+        "step_back": False,
+        "short_step": False,
+        "use_previous_preference": False,
+        "preference_method": 1,  # deltas directly
+        "preference_info": np.array([2, 1, 5, 10]),
+    }
+
+    # 3 - give new preferences
+    req = method.iterate(req)
+    print("\nStep number: ", method._h)
+    print("Iteration point: ", req.content["current_iteration_point"])
+    print("Pareto optimal vector: ", method._fs[method._h])
+    print("Lower bounds of objectives: ", req.content["lower_bounds"])
+    print("Closeness to Pareto optimal front", req.content["distance"])
+
+    # give last iteration preferences
+    req.response = {
+        "step_back": False,
+        "use_previous_preference": False,
+        "preference_method": 1,  # deltas directly
+        "preference_info": np.array([1, 2, 1, 2]),
+    }
+
+    req = method.iterate(req)
+    print("\nStep number: ", method._h)
+    print(req.content["message"])
+    print("Solution: ", req.content["solution"])
+    print("Objective function values: ", req.content["objective_vector"])
