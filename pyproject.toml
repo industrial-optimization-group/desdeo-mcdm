@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-desdeo-tools = "^0.2.6"
+desdeo-tools = "^1.0.0"
 desdeo-problem = "^0.15.0"
 
 [tool.poetry.dev-dependencies]
