@@ -27,6 +27,26 @@ class RPMException(Exception):
     pass
 
 
+def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray):
+    """
+    Validate Decion maker's reference point.
+
+    Args:
+        ref_point (np.ndarray): Reference point.
+        ideal (np.ndarray): Ideal vector.
+        nadir (np.ndarray): Nadir vector.
+
+    Returns:
+
+    """
+
+    if not ideal.shape == ref_point.shape:
+        raise RPMException("The dimension of the ideal and reference point do not match.")
+
+    if all(np.less(nadir, ref_point)):
+        raise RPMException("Reference point cannot be worse than nadir point.")  # or can it?
+
+
 class RPMInitialRequest(BaseRequest):
     """
     A request class to handle the initial preferences.
@@ -41,6 +61,7 @@ class RPMInitialRequest(BaseRequest):
         """
 
         self.n_objectives = len(ideal)
+        self._ideal = ideal
         self._nadir = nadir
 
         msg = (
@@ -75,8 +96,12 @@ class RPMInitialRequest(BaseRequest):
             response (Dict): Decision maker's response.
         """
 
-        # validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response,
-        #                 first_iteration_bool=True)
+        if not response['reference_point']:
+            msg = "Reference point missing. Please specify a reference point as 'reference_point."
+            raise RPMException(msg)
+        else:
+            validate_reference_point(response['reference_point'], self._ideal, self._nadir)
+
         self._response = response
 
 
@@ -89,6 +114,8 @@ class RPMRequest(BaseRequest):
             self,
             f_current: np.ndarray,
             f_additionals: np.ndarray,
+            ideal: np.ndarray,
+            nadir: np.ndarray,
     ):
         """
         Initialize request with current iterations's solution process information.
@@ -100,35 +127,21 @@ class RPMRequest(BaseRequest):
 
         self._f_current = f_current
         self._f_additionals = f_additionals
+        self._ideal = ideal
+        self._nadir = nadir
 
-        # TODO: continue here, return info to DM and process response
         msg = (
-            "In case you wish to change the number of remaining iterations, please specify the number as "
-            "'n_iterations'.\n "
-            "In case you wish to take a step back to the previous iteration point, please state 'True' as "
-            "'step_back'. "
-            "Otherwise state 'False' as 'step_back'\n"
-            "In case you wish to take a step back and take a shorter step with the previous preference information,"
-            "please state 'True' as 'short_step'. Otherwise, please state 'False' as 'short_step'. \n"
-            "In case you wish to use preference information from previous iteration, please state 'True' as "
-            "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
-            "In case you chose to not to use preference information from previous iteration, \n"
-            "Please specify as 'preference_method' whether to \n"
-            "1. Give directly components for direction of improvement.\n"
-            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
-            "and specify other objectives' improvement ratios in relatation to that."
-            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this pair."
-            "For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
-            "Depending on your selection on 'preference_method', please specify either the direct components, "
-            "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
-
+            "In case you are satisfied with one of the solutions, please state:  "
+            "1. 'satisfied' as 'True'."
+            "2. 'solution_index' as the index number of the solution you choose, so that first solution has index "
+            "number of 0, second 1 and so on."
+            "Otherwise, please state 'satisfied' as 'False and specify a new reference point as 'reference_point'."
         )
+
         content = {
             "message": msg,
-            "current_iteration_point": z_current,
-            "lower_bounds": lower_bounds,
-            "upper_bounds": upper_bounds,
-            "distance": distance,
+            "current_solution": f_current,
+            "additional_solutions": f_additionals
         }
 
         super().__init__("reference_point_preference", "required", content=content)
@@ -137,11 +150,25 @@ class RPMRequest(BaseRequest):
     def response(self, response: Dict) -> None:
         """
         Set Decision maker's response information for request.
+
         Args:
             response (Dict): Decision maker's response.
         """
 
-        # validate_response(self._n_objectives, self._z_current, self._nadir, response, first_iteration_bool=False)
+        if response['satisfied']:
+            if not response['solution_index']:
+                raise RPMException("If you are satisfied with one of the solutions, please specify the index of the "
+                                   "solution as 'solution_index'.")
+            if not (0 <= response['solution_index'] <= self._f_current.shape[0]):
+                msg = "Solution index must range from 0 to number of objectives - 1 '{}'. Given solution index: '{}." \
+                    .format(self._f_current.shape[0], response['solution_index'])
+                raise RPMException(msg)
+        else:
+            if not response['reference_point']:
+                raise RPMException("New reference point information missing. Please specify it as 'reference_point'.")
+            else:
+                validate_reference_point(response['reference_point'], self._ideal, self._nadir)
+
         self._response = response
 
 
@@ -153,6 +180,7 @@ class RPMStopRequest(BaseRequest):
     def __init__(self, x_h: np.ndarray, f_h: np.ndarray) -> None:
         """
         Initialize termination request with final solution and objective vector.
+
         Args:
             x_h (np.ndarray): Solution (decision variables).
             f_h (np.ndarray): Objective vector.
@@ -172,7 +200,6 @@ class ReferencePointMethod(InteractiveMethod):
     def __init__(
             self,
             problem: MOProblem,
-            starting_point: np.ndarray,
             ideal: np.ndarray,
             nadir: np.ndarray,
             epsilon: float = 1e-4,
@@ -182,12 +209,6 @@ class ReferencePointMethod(InteractiveMethod):
 
         if not ideal.shape == nadir.shape:
             raise RPMException("The dimensions of the ideal and nadir point do not match.")
-
-        if not ideal.shape == starting_point.shape:
-            raise RPMException("The dimension of the ideal and starting point do not match.")
-
-        if all(np.less(nadir, starting_point)):
-            raise RPMException("Starting point cannot be worse than nadir point.")
 
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
@@ -215,17 +236,16 @@ class ReferencePointMethod(InteractiveMethod):
         self._ideal = ideal
         self._nadir = nadir
         self._utopian = ideal - epsilon
-        self._starting_point = starting_point
         self._n_objectives = self._ideal.shape[0]
 
         # current iteration step number
         self._h = 1
 
-        # solutions in decision and objective space, distances and iteration points for each iteration
-        self._xs = [None] * 10
+        # solutions in decision and objective space, distances and referation points for each iteration
+        self._xs = [None] * 10  # TODO: Possibility to Expand space
         self._fs = [None] * 10
         self._ds = [None] * 10
-        self._zs = [None] * 10
+        self._qs = [None] * 10
 
         # perturbed reference points
         self._pqs = [None] * 10
@@ -261,6 +281,7 @@ class ReferencePointMethod(InteractiveMethod):
     ) -> Union[RPMRequest, RPMStopRequest]:
         """
         Perform the next logical iteration step based on the given request type.
+
         Args:
             request (Union[RPMInitialRequest, RPMRequest]): Either initial or intermediate request.
         Returns:
@@ -286,11 +307,9 @@ class ReferencePointMethod(InteractiveMethod):
             RPMRequest: New request with updated solution process information.
         """
 
-        # set initial iteration point
-        self._zs[self._h - 1] = self._starting_point
-
-        # set reference point
-        self._q = self._zs[self._h - 1]
+        # set initial referation point
+        self._qs[self._h] = request.content["reference_point"]
+        self._q = self._qs[self._h]
 
         # set weighting vector
         self._w = self._q / (self._utopian - self._nadir)
@@ -311,7 +330,7 @@ class ReferencePointMethod(InteractiveMethod):
 
         # calculate n other solutions with perturbed reference points
         results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
-                              self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
+                                             self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
 
         # store results into arrays
         self._axs[self._h] = [result["x"] for result in results_additional]
@@ -319,19 +338,78 @@ class ReferencePointMethod(InteractiveMethod):
 
         # return the information from iteration round to be shown to the DM.
         return RPMRequest(
-            self._fs[self._h], self._afs[self._h]
+            self._fs[self._h], self._afs[self._h], self._ideal, self._nadir
         )
+
+    def handle_request(self, request: RPMRequest) -> Union[RPMRequest, RPMStopRequest]:
+        """
+        Handle Decision maker's intermediate requests.
+
+        Args:
+            request (RPMRequest): Intermediate request including Decision maker's response.
+        Returns:
+            Union[RPMRequest, RPMStopRequest]: In case last iteration, request to stop the solution process.
+            Otherwise, new request with updated solution process information.
+        """
+
+        resp: dict = request.response
+
+        # end solution finding process
+        if resp['satisfied']:
+            if resp['solution_index'] == 0:  # "original" solution
+                return RPMStopRequest(self._xs[self._h], self._fs[self._h])
+            else:  # additional solution
+                return RPMStopRequest(self._axs[self._h][resp['solution_index'] - 1],
+                                      self._afs[self._h][resp['solution_index'] - 1])
+
+        # continue with new reference point given by the DM
+        else:
+            self._h += 1
+
+            # set new reference point
+            self._qs[self._h] = resp['new_ref_point']
+            self._q = self._qs[self._h]
+
+            # set weighting vector
+            self._w = self._q / (self._utopian - self._nadir)
+
+            # set initial values for decision variables
+            x0 = self._problem.get_variable_upper_bounds() / 2
+
+            # solve the ASF-problem
+            result = self.solve_asf(self._q, x0, self._w, self._nadir, self._ideal, self._objectives,
+                                    self._variable_bounds, method=self._method_de)
+
+            # update current solution and objective function values
+            self._xs[self._h] = result["x"]
+            self._fs[self._h] = self._objectives(self._xs[self._h])[0]
+
+            # calculate perturbed reference points
+            self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
+
+            # calculate n other solutions with perturbed reference points
+            results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
+                                                 self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
+
+            # store results into arrays
+            self._axs[self._h] = [result["x"] for result in results_additional]
+            self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
+
+            # return the information from iteration round to be shown to the DM.
+            return RPMRequest(
+                self._fs[self._h], self._afs[self._h]
+            )
 
     def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray):
         """
         Calculate perturbed reference points.
 
         Args:
-            ref_point (np.ndarray): Current reference point
+            ref_point (np.ndarray): Current reference point.
             f_current (np.ndarray): Current solution.
 
         Returns:
-            np.ndarray: Perturbed reference points
+            np.ndarray: Perturbed reference points.
         """
 
         # distance
@@ -347,20 +425,6 @@ class ReferencePointMethod(InteractiveMethod):
                     j[ind] = 1
 
         return ref_point + (d * es)
-
-    def handle_request(self, request: RPMRequest) -> Union[RPMRequest, RPMStopRequest]:
-        """
-        Handle Decision maker's intermediate requests.
-        Args:
-            request (RPMRequest): Intermediate request including Decision maker's response.
-        Returns:
-            Union[RPMRequest, RPMStopRequest]: In case last iteration, request to stop the solution process.
-            Otherwise, new request with updated solution process information.
-        """
-
-        resp: dict = request.response
-
-        # TODO: handle request
 
     def solve_asf(self,
                   ref_point: np.ndarray,
@@ -392,7 +456,7 @@ class ReferencePointMethod(InteractiveMethod):
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF([1 / preference_factors], nadir, utopian, rho=1e-5)
+        asf = ReferencePointASF(preference_factors, nadir, utopian, rho=1e-5)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
@@ -402,41 +466,12 @@ class ReferencePointMethod(InteractiveMethod):
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
         return minimizer.minimize(x0)
 
-    def calculate_iteration_point(self, itn: int, z_prev: np.ndarray, f_current: np.ndarray) -> np.ndarray:
-        """
-        Calculate next iteration point towards the Pareto optimal solution.
-        Args:
-            itn (int): Number of iterations left.
-            z_prev(np.ndarray): Previous iteration point.
-            f_current (np.ndarray): Current optimal objective vector.
-        Returns:
-            np.ndarray: Next iteration point.
-        """
-
-        return (((itn - 1) / itn) * z_prev) + ((1 / itn) * f_current)
-
-    def calculate_distance(self, z_current: np.ndarray, starting_point: np.ndarray,
-                           f_current: np.ndarray) -> np.ndarray:
-        """
-        Calculates the distance from current iteration point to the Pareto optimal set.
-        Args:
-            z_current (np.ndarray): Current iteration point.
-            starting_point (np.ndarray): Starting iteration point.
-            f_current (np.ndarray): Current optimal objective vector.
-        Returns:
-            np.ndarray: Distance to the Pareto optimal set.
-        """
-
-        dist = (np.linalg.norm(np.atleast_2d(z_current) - starting_point, ord=2, axis=1)) \
-               / (np.linalg.norm(np.atleast_2d(f_current) - starting_point, ord=2, axis=1))
-        return dist * 100
-
 
 # testing the method
 if __name__ == "__main__":
     print("Reference point method")
 
-
+    """
     # Objectives
     def f1(xs):
         xs = np.atleast_2d(xs)
@@ -446,7 +481,7 @@ if __name__ == "__main__":
     def f2(xs):
         xs = np.atleast_2d(xs)
         return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (
-                    0.30 / (1.39 - xs[:, 1] ** 2))
+                0.30 / (1.39 - xs[:, 1] ** 2))
 
 
     def f3(xs):
@@ -562,3 +597,5 @@ if __name__ == "__main__":
     print(req.content["message"])
     print("Solution: ", req.content["solution"])
     print("Objective function values: ", req.content["objective_vector"])
+    
+    """
