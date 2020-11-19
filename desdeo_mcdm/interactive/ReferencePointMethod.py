@@ -87,26 +87,21 @@ class RPMRequest(BaseRequest):
 
     def __init__(
             self,
-            z_current: np.ndarray,
-            nadir: np.ndarray,
-            lower_bounds: np.ndarray,
-            upper_bounds: np.ndarray,
-            distance: np.ndarray,
+            f_current: np.ndarray,
+            f_additionals: np.ndarray,
     ):
         """
         Initialize request with current iterations's solution process information.
+
         Args:
-            z_current (np.ndarray): Current iteration point.
-            nadir (np.ndarray): Nadir point.
-            lower_bounds (np.ndarray): Lower bounds for objective functions for next iteration.
-            upper_bounds (np.ndarray): Upper bounds for objective functions for next iteration.
-            distance (np.ndarray): Closeness to Pareto optimal front.
+            f_current (np.ndarray): Current solution.
+            f_additionals (np.ndarray): Additional solutions.
         """
 
-        self._n_objectives = len(nadir)
-        self._z_current = z_current
-        self._nadir = nadir
+        self._f_current = f_current
+        self._f_additionals = f_additionals
 
+        # TODO: continue here, return info to DM and process response
         msg = (
             "In case you wish to change the number of remaining iterations, please specify the number as "
             "'n_iterations'.\n "
@@ -226,7 +221,7 @@ class ReferencePointMethod(InteractiveMethod):
         # current iteration step number
         self._h = 1
 
-        # solutions, objectives, distances and iteration points for each iteration
+        # solutions in decision and objective space, distances and iteration points for each iteration
         self._xs = [None] * 10
         self._fs = [None] * 10
         self._ds = [None] * 10
@@ -234,6 +229,10 @@ class ReferencePointMethod(InteractiveMethod):
 
         # perturbed reference points
         self._pqs = [None] * 10
+
+        # additional solutions
+        self._axs = [None] * 10
+        self._afs = [None] * 10
 
         # current reference point
         self._q: Union[None, np.ndarray] = None
@@ -310,13 +309,18 @@ class ReferencePointMethod(InteractiveMethod):
         # calculate perturbed reference points
         self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
 
-        # calculate a number of n_objectives other solutions
-        res = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
+        # calculate n other solutions with perturbed reference points
+        results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
                               self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
 
-        # TODO: Continue from here, store perturbed results to array, present to DM.
+        # store results into arrays
+        self._axs[self._h] = [result["x"] for result in results_additional]
+        self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
 
-        p = 2
+        # return the information from iteration round to be shown to the DM.
+        return RPMRequest(
+            self._fs[self._h], self._afs[self._h]
+        )
 
     def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray):
         """
