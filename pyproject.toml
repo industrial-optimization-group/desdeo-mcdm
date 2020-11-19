@@ -2,7 +2,7 @@
 name = "desdeo-mcdm"
 version = "1.0"
 description = "Contains traditional optimization techniques from the field of Multiple-criteria decision-making. Methods belonging to the NIMBUS and NAUTILUS families can be found here. Part of the DESDEO framework."
-authors = ["Giovanni Misitano"]
+authors = ["Giovanni Misitano", "Antti Luopajärvi"]
 license = "MIT"
 
 [tool.poetry.dependencies]
