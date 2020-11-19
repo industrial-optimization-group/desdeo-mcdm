@@ -270,6 +270,7 @@ class ReferencePointMethod(InteractiveMethod):
     def start(self) -> RPMInitialRequest:
         """
         Start the solution process with initializing the first request.
+
         Returns:
             RPMInitialRequest: Initial request.
         """
@@ -284,6 +285,7 @@ class ReferencePointMethod(InteractiveMethod):
 
         Args:
             request (Union[RPMInitialRequest, RPMRequest]): Either initial or intermediate request.
+
         Returns:
             Union[RPMRequest, RPMStopRequest]: A new request with content depending on the Decision maker's
             preferences.
@@ -303,6 +305,7 @@ class ReferencePointMethod(InteractiveMethod):
 
         Args:
             request (RPMInitialRequest): Initial request including Decision maker's initial preferences.
+
         Returns:
             RPMRequest: New request with updated solution process information.
         """
@@ -318,7 +321,7 @@ class ReferencePointMethod(InteractiveMethod):
         x0 = self._problem.get_variable_upper_bounds() / 2
 
         # solve the ASF-problem
-        result = self.solve_asf(self._q, x0, self._w, self._nadir, self._ideal, self._objectives,
+        result = self.solve_asf(self._q, x0, self._w, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=self._method_de)
 
         # update current solution and objective function values
@@ -329,7 +332,7 @@ class ReferencePointMethod(InteractiveMethod):
         self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
 
         # calculate n other solutions with perturbed reference points
-        results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
+        results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._utopian, self._objectives,
                                              self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
 
         # store results into arrays
@@ -347,6 +350,7 @@ class ReferencePointMethod(InteractiveMethod):
 
         Args:
             request (RPMRequest): Intermediate request including Decision maker's response.
+
         Returns:
             Union[RPMRequest, RPMStopRequest]: In case last iteration, request to stop the solution process.
             Otherwise, new request with updated solution process information.
@@ -366,6 +370,16 @@ class ReferencePointMethod(InteractiveMethod):
         else:
             self._h += 1
 
+            if len(self._qs) - self._h <= 2:
+                # "expand" space on arrays
+                extra_space = [None] * 10
+                self._qs = np.array(np.concatenate((self._qs, extra_space), axis=None), dtype=object)
+                self._xs = np.array(np.concatenate((self._xs, extra_space), axis=None), dtype=object)
+                self._fs = np.array(np.concatenate((self._fs, extra_space), axis=None), dtype=object)
+                self._pqs = np.array(np.concatenate((self._pqs, extra_space), axis=None), dtype=object)
+                self._axs = np.array(np.concatenate((self._axs, extra_space), axis=None), dtype=object)
+                self._afs = np.array(np.concatenate((self._afs, extra_space), axis=None), dtype=object)
+
             # set new reference point
             self._qs[self._h] = resp['new_ref_point']
             self._q = self._qs[self._h]
@@ -377,7 +391,7 @@ class ReferencePointMethod(InteractiveMethod):
             x0 = self._problem.get_variable_upper_bounds() / 2
 
             # solve the ASF-problem
-            result = self.solve_asf(self._q, x0, self._w, self._nadir, self._ideal, self._objectives,
+            result = self.solve_asf(self._q, x0, self._w, self._nadir, self._utopian, self._objectives,
                                     self._variable_bounds, method=self._method_de)
 
             # update current solution and objective function values
@@ -388,7 +402,7 @@ class ReferencePointMethod(InteractiveMethod):
             self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
 
             # calculate n other solutions with perturbed reference points
-            results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._ideal, self._objectives,
+            results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._utopian, self._objectives,
                                                  self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
 
             # store results into arrays
@@ -438,6 +452,7 @@ class ReferencePointMethod(InteractiveMethod):
                   ) -> dict:
         """
         Solve Achievement scalarizing function.
+
         Args:
             ref_point (np.ndarray): Reference point.
             x0 (np.ndarray): Initial values for decison variables.
@@ -449,8 +464,9 @@ class ReferencePointMethod(InteractiveMethod):
             variable_bounds (Optional[np.ndarray): Lower and upper bounds of each variable
                                                    as a 2D numpy array. If undefined variables, None instead.
             method (Union[ScalarMethod, str, None): The optimization method the scalarizer should be minimized with
+
         Returns:
-            Dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
+            dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
             'fun' the optimal value of the optimized functoin, and 'success' a boolean indicating whether
             the optimization was conducted successfully.
         """
