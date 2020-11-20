@@ -55,6 +55,7 @@ class RPMInitialRequest(BaseRequest):
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
         """
         Initialize with ideal and nadir vectors.
+
         Args:
             ideal (np.ndarray): Ideal vector.
             nadir (np.ndarray): Nadir vector.
@@ -92,11 +93,12 @@ class RPMInitialRequest(BaseRequest):
     def response(self, response: Dict) -> None:
         """
         Set Decision maker's response information for initial request.
+
         Args:
             response (Dict): Decision maker's response.
         """
 
-        if not response['reference_point']:
+        if 'reference_point' not in response:
             msg = "Reference point missing. Please specify a reference point as 'reference_point."
             raise RPMException(msg)
         else:
@@ -155,7 +157,7 @@ class RPMRequest(BaseRequest):
             response (Dict): Decision maker's response.
         """
 
-        if response['satisfied']:
+        if 'satisfied' in response and response['satisfied']:
             if not response['solution_index']:
                 raise RPMException("If you are satisfied with one of the solutions, please specify the index of the "
                                    "solution as 'solution_index'.")
@@ -164,7 +166,7 @@ class RPMRequest(BaseRequest):
                     .format(self._f_current.shape[0], response['solution_index'])
                 raise RPMException(msg)
         else:
-            if not response['reference_point']:
+            if 'reference_point' not in response:
                 raise RPMException("New reference point information missing. Please specify it as 'reference_point'.")
             else:
                 validate_reference_point(response['reference_point'], self._ideal, self._nadir)
@@ -242,7 +244,7 @@ class ReferencePointMethod(InteractiveMethod):
         self._h = 1
 
         # solutions in decision and objective space, distances and referation points for each iteration
-        self._xs = [None] * 10  # TODO: Possibility to Expand space
+        self._xs = [None] * 10
         self._fs = [None] * 10
         self._ds = [None] * 10
         self._qs = [None] * 10
@@ -311,7 +313,7 @@ class ReferencePointMethod(InteractiveMethod):
         """
 
         # set initial referation point
-        self._qs[self._h] = request.content["reference_point"]
+        self._qs[self._h] = request.response["reference_point"]
         self._q = self._qs[self._h]
 
         # set weighting vector
@@ -359,7 +361,7 @@ class ReferencePointMethod(InteractiveMethod):
         resp: dict = request.response
 
         # end solution finding process
-        if resp['satisfied']:
+        if 'satisfied' in resp and resp['satisfied']:
             if resp['solution_index'] == 0:  # "original" solution
                 return RPMStopRequest(self._xs[self._h], self._fs[self._h])
             else:  # additional solution
@@ -381,7 +383,7 @@ class ReferencePointMethod(InteractiveMethod):
                 self._afs = np.array(np.concatenate((self._afs, extra_space), axis=None), dtype=object)
 
             # set new reference point
-            self._qs[self._h] = resp['new_ref_point']
+            self._qs[self._h] = resp['reference_point']
             self._q = self._qs[self._h]
 
             # set weighting vector
@@ -411,7 +413,7 @@ class ReferencePointMethod(InteractiveMethod):
 
             # return the information from iteration round to be shown to the DM.
             return RPMRequest(
-                self._fs[self._h], self._afs[self._h]
+                self._fs[self._h], self._afs[self._h], self._ideal, self._nadir
             )
 
     def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray):
@@ -472,7 +474,7 @@ class ReferencePointMethod(InteractiveMethod):
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF(preference_factors, nadir, utopian, rho=1e-5)
+        asf = ReferencePointASF(preference_factors, nadir, utopian, rho=1e-4)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
@@ -487,7 +489,7 @@ class ReferencePointMethod(InteractiveMethod):
 if __name__ == "__main__":
     print("Reference point method")
 
-    """
+
     # Objectives
     def f1(xs):
         xs = np.atleast_2d(xs)
@@ -537,81 +539,41 @@ if __name__ == "__main__":
     ideal = np.array([-6.34, -3.44487179, -7.5, 0])
     nadir = np.array([-4.751, -2.86054116, -0.32111111, 9.70666666])
 
-    # starting point
-    z0 = np.array(([-4.07, -2.82, -3, 4]))
 
     # start solving
-    method = ReferencePointMethod(problem=prob, starting_point=z0, ideal=ideal, nadir=nadir)
+    method = ReferencePointMethod(problem=prob, ideal=ideal, nadir=nadir)
+
+    # Pareto optimal solution: [-6.30, -3.26, -2.60, 3.63]
 
     print("Let's start solving\n")
     req = method.start()
-
-    # initial preferences
-    n_iterations = 3
+    rp = np.array([-5., -3., -3., 5.])
     req.response = {
-        "n_iterations": n_iterations,
-        "preference_method": 3,  # pairs
-        # remember to specify "dtype=object" when using preference method 3.
-        "preference_info": np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
+        "reference_point": rp,
     }
+
     print("Step number: 0")
-    print("Iteration point: ", nadir)
-    print("Lower bounds of objectives: ", ideal)
 
     # 1 - continue with same preferences
     req = method.iterate(req)
+    step = 1
     print("\nStep number: ", method._h)
-    print("Iteration point: ", req.content["current_iteration_point"])
-    print("Pareto optimal vector: ", method._fs[method._h])
-    print("Lower bounds of objectives: ", req.content["lower_bounds"])
-    # print("Upper bounds of objectives:", req.content["upper_bounds"])
-    print("Closeness to Pareto optimal front", req.content["distance"])
+    print("Reference point: ", rp)
+    print("Pareto optimal solution: ", req.content["current_solution"])
+    print("Additional solutions: ", req.content["additional_solutions"])
 
-    req.response = {
-        "step_back": False,
-        "short_step": False,
-        "use_previous_preference": False,
-        "preference_method": 3,  # deltas directly
-        "preference_info": np.array([((1, 3), 0.5), ((2, 4), 1), ((2, 3), (2 / 3))], dtype=object),
+    while step < 15:
+        step +=1
+        rp = np.array([np.random.uniform(i, n) for i, n in zip(ideal, nadir)])
+        req.response = {
+            "reference_point": rp,
+        }
+        req = method.iterate(req)
+        print("\nStep number: ", method._h)
+        print("Reference point: ", rp)
+        print("Pareto optimal solution: ", req.content["current_solution"])
+        print("Additional solutions: ", req.content["additional_solutions"])
 
-    }
 
-    # 2 - take a step back and give new preferences
-    req = method.iterate(req)
-    print("\nStep number: ", method._h)
-    print("Iteration point: ", req.content["current_iteration_point"])
-    print("Pareto optimal vector: ", method._fs[method._h])
-    print("Lower bounds of objectives: ", req.content["lower_bounds"])
-    print("Closeness to Pareto optimal front", req.content["distance"])
 
-    req.response = {
-        "step_back": False,
-        "short_step": False,
-        "use_previous_preference": False,
-        "preference_method": 1,  # deltas directly
-        "preference_info": np.array([2, 1, 5, 10]),
-    }
 
-    # 3 - give new preferences
-    req = method.iterate(req)
-    print("\nStep number: ", method._h)
-    print("Iteration point: ", req.content["current_iteration_point"])
-    print("Pareto optimal vector: ", method._fs[method._h])
-    print("Lower bounds of objectives: ", req.content["lower_bounds"])
-    print("Closeness to Pareto optimal front", req.content["distance"])
-
-    # give last iteration preferences
-    req.response = {
-        "step_back": False,
-        "use_previous_preference": False,
-        "preference_method": 1,  # deltas directly
-        "preference_info": np.array([1, 2, 1, 2]),
-    }
-
-    req = method.iterate(req)
-    print("\nStep number: ", method._h)
-    print(req.content["message"])
-    print("Solution: ", req.content["solution"])
-    print("Objective function values: ", req.content["objective_vector"])
-    
-    """
