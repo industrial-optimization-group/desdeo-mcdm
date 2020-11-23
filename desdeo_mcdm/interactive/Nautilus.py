@@ -8,6 +8,7 @@ from desdeo_problem.Constraint import ScalarConstraint
 from desdeo_problem.Problem import MOProblem
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
+# from desdeo_tools.scalarization import
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 
@@ -269,7 +270,8 @@ class NautilusInitialRequest(BaseRequest):
 
         """
 
-        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
+        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response,
+                          first_iteration_bool=True)
         self._response = response
 
 
