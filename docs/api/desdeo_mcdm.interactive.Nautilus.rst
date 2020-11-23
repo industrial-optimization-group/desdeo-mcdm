@@ -32,5 +32,6 @@ Nautilus
    .. automethod:: solve_asf
    .. automethod:: start
 
-   .. _article: https://www.sciencedirect.com/science/article/pii/S0377221710001785
-   __ article_
+   .. |Miettinen_2010| raw:: html
+
+      <a href="http://www.sciencedirect.com/science/article/pii/S0377221710001785" target="_blank">Miettinen 2010</a>
