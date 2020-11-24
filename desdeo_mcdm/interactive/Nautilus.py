@@ -289,7 +289,7 @@ class NautilusStopRequest(BaseRequest):
 
 class Nautilus(InteractiveMethod):
     """
-    Implements the basic NAUTILUS method as presented in `Miettinen 2010`__.
+    Implements the basic NAUTILUS method as presented in |Miettinen_2010|.
 
     In NAUTILUS, starting from the nadir point,
     a solution is obtained at each iteration which dominates the previous one.
@@ -384,7 +384,7 @@ class Nautilus(InteractiveMethod):
         # preference information
         self._preference_method = None
         self._preference_info = None
-        self._preference_factors = None
+        self._preferential_factors = None
 
         # number of total iterations and iterations left
         self._n_iterations = None
@@ -468,7 +468,7 @@ class Nautilus(InteractiveMethod):
         # set preference information
         self._preference_method: int = request.response["preference_method"]
         self._preference_info: np.ndarray = request.response["preference_info"]
-        self._preference_factors = self.calculate_preference_factors(self._preference_method, self._preference_info,
+        self._preferential_factors = self.calculate_preferential_factors(self._preference_method, self._preference_info,
                                                                      self._nadir, self._utopian)
 
         # set reference point, initial values for decision variables, lower and upper bounds for objective functions
@@ -479,7 +479,7 @@ class Nautilus(InteractiveMethod):
         self._upper_bounds[self._step_number] = self._nadir
 
         # solve the ASF-problem
-        result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
+        result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=self._method_de)
 
         # update current solution and objective function values
@@ -564,14 +564,14 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(self._preference_method,
+                self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
                                                                              self._preference_info,
                                                                              self._nadir, self._utopian)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
+                result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian,
                                         self._objectives,
                                         self._variable_bounds, method=self._method_de)
 
@@ -640,14 +640,14 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(self._preference_method,
+                self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
                                                                              self._preference_info,
                                                                              self._nadir, self._utopian)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
+                result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian,
                                         self._objectives,
                                         self._variable_bounds, method=self._method_de)
 
@@ -679,10 +679,26 @@ class Nautilus(InteractiveMethod):
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
-    def calculate_preference_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
+    def calculate_preferential_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
                                      utopian: np.ndarray) -> np.ndarray:
         """
-        Calculate preference factors based on decision maker's preference information.
+        Calculate **preferential factors** based on the Decision maker's preference information. These preferential
+        factors are used as weights for objectives when solving an Achievement scalarizing function. The Decision maker
+        (DM) has **two possibilities** to provide her/his preferences:
+
+        1. The DM can rank the objectives according to the **relative** importance of improving each current objective
+        value.
+
+        Note:
+            This ranking is not a global preference ranking of the objectives, but represents the local importance of
+            improving each of the current objective values **at that moment**.
+
+        2. The DM can specify percentages reflecting how (s)he would like to improve the current objective values,
+        by answering to the following question:
+
+        *"Assuming you have one hundred points available, how would you distribute
+        them among the current objective values so that the more points you allocate, the more improvement on the
+        corresponding current objective value is desired?"*
 
         Args:
             pref_method (int): Preference information method (either ranks (1) or percentages (2)).
@@ -693,18 +709,34 @@ class Nautilus(InteractiveMethod):
 
         Returns:
             np.ndarray: Weights assigned to each of the objective functions in achievement scalarizing function.
+
+        Examples:
+            >>> pref_method = 1  # ranks
+            >>> pref_info = np.array([2, 2, 1, 1])  # first and second objective are the most important to improve
+            >>> nadir = np.array([-4.75, -2.87, -0.32, 9.71])
+            >>> utopian = np.array([-6.34, -3.44, -7.5, 0.])
+            >>> calculate_preferential_factors(pref_method, pref_info, nadir, utopian)
+            array([0.31446541, 0.87719298, 0.13927577, 0.10298661])
+
+            >>> pref_method = 2  # percentages
+            >>> pref_info = np.array([10, 30, 40, 20])  # DM wishes to improve most the value of objective 3, then 2,4,1
+            >>> nadir = np.array([-4.75, -2.87, -0.32, 9.71])
+            >>> utopian = np.array([-6.34, -3.44, -7.5, 0.])
+            >>> calculate_preferential_factors(pref_method, pref_info, nadir, utopian)
+            array([6.28930818, 5.84795322, 0.34818942, 0.51493306])
+
         """
 
         if pref_method == 1:  # ranks
-            return [1 / (r_i * (n_i - u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)]
+            return np.array([1 / (r_i * (n_i - u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)])
         elif pref_method == 2:  # percentages
             delta_q = pref_info / 100
-            return [1 / (d_i * (n_i - u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)]
+            return np.array([1 / (d_i * (n_i - u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)])
 
     def solve_asf(self,
                   ref_point: np.ndarray,
                   x0: np.ndarray,
-                  preference_factors: np.ndarray,
+                  preferential_factors: np.ndarray,
                   nadir: np.ndarray,
                   utopian: np.ndarray,
                   objectives: Callable,
@@ -717,7 +749,7 @@ class Nautilus(InteractiveMethod):
         Args:
             ref_point (np.ndarray): Reference point.
             x0 (np.ndarray): Initial values for decision variables.
-            preference_factors (np.ndarray): Preference factors on how much would the decision maker wish to improve
+            preferential_factors (np.ndarray): preferential factors on how much would the decision maker wish to improve
                                              the values of each objective function.
             nadir (np.ndarray): Nadir vector.
             utopian (np.ndarray): Utopian vector.
@@ -734,7 +766,7 @@ class Nautilus(InteractiveMethod):
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF(preference_factors, nadir, utopian, rho=1e-6)
+        asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-6)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
