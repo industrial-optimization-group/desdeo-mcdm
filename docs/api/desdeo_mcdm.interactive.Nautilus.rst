@@ -13,7 +13,7 @@ Nautilus
       ~Nautilus.calculate_bounds
       ~Nautilus.calculate_distance
       ~Nautilus.calculate_iteration_point
-      ~Nautilus.calculate_preference_factors
+      ~Nautilus.calculate_preferential_factors
       ~Nautilus.handle_initial_request
       ~Nautilus.handle_request
       ~Nautilus.iterate
@@ -25,7 +25,7 @@ Nautilus
    .. automethod:: calculate_bounds
    .. automethod:: calculate_distance
    .. automethod:: calculate_iteration_point
-   .. automethod:: calculate_preference_factors
+   .. automethod:: calculate_preferential_factors
    .. automethod:: handle_initial_request
    .. automethod:: handle_request
    .. automethod:: iterate
