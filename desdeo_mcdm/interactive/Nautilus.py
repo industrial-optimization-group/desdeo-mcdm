@@ -132,7 +132,7 @@ class NautilusException(Exception):
 
 class NautilusInitialRequest(BaseRequest):
     """
-    A request class to handle the initial preferences.
+    A request class to handle the Decision maker's initial preferences for the first iteration round.
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
@@ -197,7 +197,7 @@ class NautilusInitialRequest(BaseRequest):
 
 class NautilusRequest(BaseRequest):
     """
-    A request class to handle the intermediate requests.
+    A request class to handle the Decision maker's preferences after the first iteration round.
     """
 
     def __init__(
@@ -297,6 +297,30 @@ class Nautilus(InteractiveMethod):
     Pareto optimal set, and the search is oriented so that (s)he progressively focusses on the preferred part of
     the Pareto optimal set. Each new solution is obtained by minimizing an achievement scalarizing function including
     preferences about desired improvements in objective function values.
+
+    The decision maker has **two possibilities** to provide her/his preferences:
+
+    1. The decision maker can **rank** the objectives according to the **relative** importance of improving each current
+    objective value.
+
+    Note:
+        This ranking is not a global preference ranking of the objectives, but represents the local importance of
+        improving each of the current objective values **at that moment**.
+
+    2. The decision maker can specify **percentages** reflecting how (s)he would like to improve the current objective
+    values, by answering to the following question:
+
+    *"Assuming you have one hundred points available, how would you distribute
+    them among the current objective values so that the more points you allocate, the more improvement on the
+    corresponding current objective value is desired?"*
+
+    After each iteration round, the decision maker specifies whether (s)he wishes to continue with the previous
+    preference information, or define a new one.
+
+    In addition to this, the decision maker can influence the solution finding process by taking a **step back** to
+    previous iteration point. This enables the decision maker to provide new preferences and change the direction of
+    solution seeking process. Furthermore, the decision maker can also take a **half-step** in case (s)he feels that a
+    full step limits the reachable area of Pareto optimal set too much.
 
     NAUTILUS is specially suitable for avoiding  undesired anchoring effects, for example in negotiation support
     problems, or just as a means of finding an initial Pareto optimal solution for any interactive procedure.
@@ -511,7 +535,7 @@ class Nautilus(InteractiveMethod):
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
         """
-        Handle Decision maker's intermediate requests.
+        Handle Decision maker's requests after the first iteration round, so called **intermediate requests.**
 
         Args:
             request (NautilusRequest): Intermediate request including Decision maker's response.
@@ -682,7 +706,7 @@ class Nautilus(InteractiveMethod):
     def calculate_preferential_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
                                      utopian: np.ndarray) -> np.ndarray:
         """
-        Calculate **preferential factors** based on the Decision maker's preference information. These preferential
+        Calculate preferential factors based on the Decision maker's preference information. These preferential
         factors are used as weights for objectives when solving an Achievement scalarizing function. The Decision maker
         (DM) has **two possibilities** to provide her/his preferences:
 
