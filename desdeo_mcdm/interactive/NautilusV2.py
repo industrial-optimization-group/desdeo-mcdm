@@ -338,7 +338,7 @@ class NautilusStopRequest(BaseRequest):
 
 class NautilusV2(InteractiveMethod):
     """
-    Implements the NAUTILUS 2 method as presented in `Miettinen 2015`__.
+    Implements the NAUTILUS 2 method as presented in |Miettinen_2015|.
 
     Similarly to NAUTILUS, starting from the nadir point,
     a solution is obtained at each iteration which dominates the previous one.
@@ -349,19 +349,28 @@ class NautilusV2(InteractiveMethod):
 
     NAUTILUS 2 introduces a new preference handeling technique which is easily understandable for the DM and allows
     the DM to conveniently control the solution process. Preferences are given as direction of improvement for
-    objectives. In NAUTILUS 2, the DM has three ways to do this:
+    objectives. In NAUTILUS 2, the DM has **three ways** to do this:
 
     1. The DM sets the direction of improvement directly.
 
-    2. The DM defines the improvement ratio between two different objectives fi and fj.
+    2. The DM defines the **improvement ratio** between two different objectives fi and fj.
        For example, if the DM wishes that the improvement of fi by one unit should be accompanied with the improvement
        of fj by θij units. Here, the DM selects an objective fi (i=1,…,k) and for each of the other objectives fj
        sets the value θij. Then, the direction of improvement is defined by
 
             ``δi=1 and δj=θij, j≠i.``
 
-    3. As a generalization of the approach 2, the DM sets values of improvement ratios freely for some selected pairs of
-       objective functions.
+    3. As a generalization of the approach 2, the DM sets values of improvement ratios freely for some **selected
+       pairs** of objective functions.
+
+    As with NAUTILUS, after each iteration round, the decision maker specifies whether (s)he wishes to continue with the
+    previous preference information, or define a new one.
+
+    In addition to this, the decision maker can influence the solution finding process by taking a **step back** to
+    previous iteration point. This enables the decision maker to provide new preferences and change the direction of
+    solution seeking process. Furthermore, the decision maker can also take a **half-step** in case (s)he feels that a
+    full step limits the reachable area of Pareto optimal set too much.
+
 
     Args:
         problem (MOProblem): Problem to be solved.
@@ -452,14 +461,14 @@ class NautilusV2(InteractiveMethod):
         # preference information
         self._preference_method = None
         self._preference_info = None
-        self._preference_factors = None
+        self._preferential_factors = None
 
         # number of total iterations and iterations left
         self._n_iterations = None
         self._n_iterations_left = None
 
         # flags for the iteration phase
-        # not needed atm, should utilize or not?
+        # not utilized atm
         self._use_previous_preference: bool = False
         self._step_back: bool = False
         self._short_step: bool = False
@@ -508,7 +517,7 @@ class NautilusV2(InteractiveMethod):
 
     def handle_initial_request(self, request: NautilusInitialRequest) -> NautilusRequest:
         """
-        Handles the initial request by parsing the response appropiately.
+        Handles the initial request by parsing the response appropriately.
 
         Args:
             request (NautilusInitialRequest): Initial request including Decision maker's initial preferences.
@@ -536,7 +545,7 @@ class NautilusV2(InteractiveMethod):
         # set preference information
         self._preference_method: int = request.response["preference_method"]
         self._preference_info: np.ndarray = request.response["preference_info"]
-        self._preference_factors = self.calculate_preference_factors(len(self._objective_names),
+        self._preferential_factors = self.calculate_preferential_factors(len(self._objective_names),
                                                                      self._preference_method,
                                                                      self._preference_info)
 
@@ -548,7 +557,7 @@ class NautilusV2(InteractiveMethod):
         self._upper_bounds[self._step_number] = self._nadir
 
         # solve the ASF-problem
-        result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian, self._objectives,
+        result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian, self._objectives,
                                 self._variable_bounds, method=self._method_de)
 
         # update current solution and objective function values
@@ -633,14 +642,14 @@ class NautilusV2(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(len(self._objective_names),
+                self._preferential_factors = self.calculate_preferential_factors(len(self._objective_names),
                                                                              self._preference_method,
                                                                              self._preference_info)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
+                result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian,
                                         self._objectives,
                                         self._variable_bounds, method=self._method_de)
 
@@ -709,14 +718,14 @@ class NautilusV2(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preference_factors = self.calculate_preference_factors(len(self._objective_names),
+                self._preferential_factors = self.calculate_preferential_factors(len(self._objective_names),
                                                                              self._preference_method,
                                                                              self._preference_info)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preference_factors, self._nadir, self._utopian,
+                result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian,
                                         self._objectives,
                                         self._variable_bounds, method=self._method_de)
 
@@ -748,25 +757,27 @@ class NautilusV2(InteractiveMethod):
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
-    def calculate_preference_factors(self, n_objectives: int, pref_method: int, pref_info: np.ndarray) -> np.ndarray:
+    def calculate_preferential_factors(self, n_objectives: int, pref_method: int, pref_info: np.ndarray) -> np.ndarray:
         """
-        Calculate preference factors based on decision maker's preference information.
+        Calculate preferential factors based on decision maker's preference information.
 
         Args:
             n_objectives (int): Number of objectives in problem.
-            pref_method (int): Preference information method (either components (1) or improvement ratios (2)).
+            pref_method (int): Preference information method (either direction of improvement (1), improvement ratios
+                               between a selected objective and rest of the objectives (2), or improvement ratios freely
+                               for some selected pairs of objectives (3).).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
                                     function.
-                                    The Decision maker has three ways to do this:
+                                    The Decision maker has **three ways** to do this:
 
-                                    1. The DM sets the direction of improvement directly.
+                                    1. The DM sets the **direction of improvement directly**.
                                        Example input could be:
 
                                             ``np.array([0.3, 0.5, 0.4, 2])``, if n_objectives == 4.
 
-                                    2. The DM defines the improvement ratio between two different objectives fi and fj.
-                                       For example, if the DM wishes that the improvement of fi by one unit should be
-                                       accompanied with the improvement of fj by θij units. Here, the DM selects an
+                                    2. The DM defines the **improvement ratio** between two different objectives fi and
+                                       fj. For example, if the DM wishes that the improvement of fi by one unit should
+                                       be accompanied with the improvement of fj by θij units. Here, the DM selects an
                                        objective fi (i=1,…,k) and for each of the other objectives fj sets the value
                                        θij. Then, the direction of improvement is defined by
 
@@ -777,17 +788,37 @@ class NautilusV2(InteractiveMethod):
                                             ``np.array([1, 1.5, 0.5, (2/7)])``, if n_objectives == 4.
 
                                     3. As a generalization of the approach 2, the DM sets values of improvement ratios
-                                       freely for some selected pairs of objective functions.
+                                       freely for some **selected pairs** of objective functions.
                                        Example input could be:
 
                                             ``np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)], dtype=object)``, if
                                             n_objectives == 4.
 
-                                       Remember to specify "dtype=object" when using preference method 3.
+                                    Note:
+                                        Remember to specify "dtype=object" in **pref_info array** when using preference
+                                        method 3.
 
         Returns:
             np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in
                         achievement scalarizing function.
+
+        Examples:
+            >>> n_objectives = 4
+            >>> pref_method = 1  # deltas directly
+            >>> pref_info = np.array([1, 2, 1, 2]),  # second and fourth objective are the most important to improve
+            >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
+            np.array([1, 2, 1, 2])
+            >>> n_objectives = 4
+            >>> pref_method = 2  # improvement ratios between one selected objective and each other objective
+            >>> pref_info = np.array([1, 1.5, (7/3), 0.5])  # first objective's ratio is set to one
+            >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
+            np.array([1, 1.5, (7/3), 0.5])
+            >>> n_objectives = 4
+            >>> pref_method = 3  # improvement ratios between freely selected pairs of objectives
+            >>> pref_info = np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
+            >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
+            np.array([1., 0.5, 0.75, 0.75])
+
         """
 
         if pref_method in [1, 2]:  # deltas directly or improvement ratios
@@ -854,7 +885,7 @@ class NautilusV2(InteractiveMethod):
     def solve_asf(self,
                   ref_point: np.ndarray,
                   x0: np.ndarray,
-                  preference_factors: np.ndarray,
+                  preferential_factors: np.ndarray,
                   nadir: np.ndarray,
                   utopian: np.ndarray,
                   objectives: Callable,
@@ -866,9 +897,9 @@ class NautilusV2(InteractiveMethod):
 
         Args:
             ref_point (np.ndarray): Reference point.
-            x0 (np.ndarray): Initial values for decison variables.
-            preference_factors (np.ndarray): Preference factors on how much would the decision maker wish to improve
-                                             the values of each objective function.
+            x0 (np.ndarray): Initial values for decision variables.
+            preferential_factors (np.ndarray): Preferential factors indicating how much would the decision maker wish to
+                                               improve the values of each objective function.
             nadir (np.ndarray): Nadir vector.
             utopian (np.ndarray): Utopian vector.
             objectives (np.ndarray): The objective function values for each input vector.
@@ -878,13 +909,13 @@ class NautilusV2(InteractiveMethod):
 
         Returns:
             Dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
-            'fun' the optimal value of the optimized functoin, and 'success' a boolean indicating whether
+            'fun' the optimal value of the optimized function, and 'success' a boolean indicating whether
             the optimization was conducted successfully.
 
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF([1 / preference_factors], nadir, utopian, rho=1e-5)
+        asf = ReferencePointASF([1 / preferential_factors], nadir, utopian, rho=1e-5)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
@@ -919,7 +950,7 @@ class NautilusV2(InteractiveMethod):
         Args:
             objectives (np.ndarray): The objective function values for each input vector.
             n_objectives (int): Total number of objectives.
-            x0 (np.ndarray): Initial values for decison variables.
+            x0 (np.ndarray): Initial values for decision variables.
             epsilons (np.ndarray): Previous iteration point.
             bounds (Union[np.ndarray, None): Bounds for decision variables.
             constraints (Callable): Constraints of the problem.
@@ -1065,7 +1096,7 @@ if __name__ == "__main__":
         "step_back": False,
         "short_step": False,
         "use_previous_preference": False,
-        "preference_method": 3,  # deltas directly
+        "preference_method": 3,  # pairs
         "preference_info": np.array([((1, 3), 0.5), ((2, 4), 1), ((2, 3), (2 / 3))], dtype=object),
 
     }
