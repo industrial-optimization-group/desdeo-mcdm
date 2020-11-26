@@ -7,98 +7,16 @@ import numpy as np
 
 from desdeo_problem.Variable import variable_builder
 from desdeo_problem.Objective import VectorObjective, _ScalarObjective
-from desdeo_problem.Constraint import ScalarConstraint
 from desdeo_problem.Problem import MOProblem
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
+from desdeo_tools.scalarization import EpsilonConstraintMethod as ECM
 from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
-from scipy.optimize import minimize, differential_evolution
-
-"""
-Epsilon constraint method
-"""
-
-
-class ECMError(Exception):
-    """Raised when an error related to the Epsilon Constraint Method is encountered.
-    """
-
-
-class EpsilonConstraintMethod:
-    """A class to represent a class for scalarizing MOO problems using the epsilon
-        constraint method.
-    Attributes:
-        objectives (Callable): Objective functions.
-        to_be_minimized (int): Integer representing which objective function
-        should be minimized.
-        epsilons (np.ndarray): Upper bounds chosen by the decison maker.
-                               Epsilon constraint functions are defined in a following form:
-                                    f_i(x) <= eps_i
-                               If the constraint function is of form
-                                    f_i(x) >= eps_i
-                               Remember to multiply the epsilon value with -1!
-        constraints (Optional[Callable]): Function that returns definitions of other constraints, if existing.
-    """
-
-    def __init__(
-            self, objectives: Callable, to_be_minimized: int, epsilons: np.ndarray,
-            constraints: Optional[Callable]
-    ):
-        self.objectives = objectives
-        self._to_be_minimized = to_be_minimized
-        self.epsilons = epsilons
-        self.constraints = constraints
-
-    def evaluate_constraints(self, xs) -> np.ndarray:
-        """
-        Returns values of constraints with given decison variables.
-        Args:
-            xs (np.ndarray): Decision variables.
-        Returns: Values of constraint functions (both "original" constraints as well as epsilon constraints) in a vector.
-        """
-        xs = np.atleast_2d(xs)
-
-        # evaluate epsilon constraint function "left-side" values with given decision variables
-        epsilon_left_side = np.array(
-            [val for nrow, row in enumerate(self.objectives(xs))
-             for ival, val in enumerate(row) if ival != self._to_be_minimized
-             ])
-
-        if len(epsilon_left_side) != len(self.epsilons):
-            msg = ("The lenght of the epsilons array ({}) must match the total number of objectives - 1 ({})."
-                   ).format(len(self.epsilons), len(self.objectives(xs)) - 1)
-            raise ECMError(msg)
-
-        # evaluate values of epsilon constraint functions
-        e: np.ndarray = np.array([-(f - v) for f, v in zip(epsilon_left_side, self.epsilons)])
-
-        if self.constraints(xs) is not None:
-            c = self.constraints(xs)
-            return np.concatenate([c, e], axis=None)  # does it work with multiple constraints?
-        else:
-            return e
-
-    def __call__(self, objective_vector: np.ndarray) -> Union[float, np.ndarray]:
-        """
-        Returns the value of objective function to be minimized.
-        Args:
-            objective_vector (np.ndarray): Values of objective functions.
-
-        Returns: Value of objective function to be minimized.
-        """
-        if np.shape(objective_vector)[0] > 1:  # more rows than one
-            return np.array([objective_vector[i][self._to_be_minimized] for i, _ in enumerate(objective_vector)])
-        else:
-            return objective_vector[0][self._to_be_minimized]
-
-
-"""
-Nautilus 2
-"""
+from scipy.optimize import differential_evolution
 
 
 def validate_response(n_objectives: int,
@@ -167,7 +85,8 @@ def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
 
     if response["preference_method"] in [1, 2]:
         if any(response["preference_info"] <= 0):
-            msg = "All 'preference_info' items must be greater than zero. Check the items {}".format(response["preference_info"])
+            msg = "All 'preference_info' items must be greater than zero. Check the items {}".format(
+                response["preference_info"])
             raise NautilusException(msg)
         if len(response["preference_info"]) < n_objectives:
             msg = "Number of items in 'preference_info' ({}) do not match the number of objectives ({})." \
@@ -183,7 +102,7 @@ def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
     if response["preference_method"] == 3:  # objective pairs and improvement ratios
 
         # for checking that all objectives are included
-        obj_mask = [False]*n_objectives
+        obj_mask = [False] * n_objectives
 
         if len(response["preference_info"]) != (n_objectives - 1):
             msg = "Number of improvement ratios must be number of objectives - 1 ({}). The provided number was {}. " \
@@ -193,7 +112,7 @@ def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
             raise NautilusException(msg)
 
         for elem in response["preference_info"]:
-        
+
             for obj in elem[0]:
                 if not isinstance(obj, int) or int(obj) <= 0:
                     msg = "All objective function indeces must be a positive integer number. Given indeces ratios: {}.". \
@@ -212,7 +131,7 @@ def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
                 obj_mask[obj - 1] = True
 
             if not isinstance(elem[1], int) and not isinstance(elem[1], float):
-                msg = "All improvement ratios must be a integer of float number. Given improvement ratios: {}.".\
+                msg = "All improvement ratios must be a integer of float number. Given improvement ratios: {}.". \
                     format([elem[1] for elem in response["preference_info"]])
                 raise NautilusException(msg)
 
@@ -277,10 +196,10 @@ class NautilusInitialRequest(BaseRequest):
             "Please specify the number of iterations as 'n_iterations' to be carried out.\n"
             "Please specify as 'preference_method' whether to \n"
             "1. Give directly components for direction of improvement.\n"
-            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
-            "and specify other objectives' improvement ratios in relatation to that."
-            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this pair." 
-            "For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
+            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio"
+            " as 1 and specify other objectives' improvement ratios in relatation to that."
+            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this "
+            "pair. For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
             "Depending on your selection on 'preference_method', please specify either the direct components, "
             "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
         )
@@ -317,7 +236,8 @@ class NautilusInitialRequest(BaseRequest):
 
         """
 
-        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True)
+        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response,
+                          first_iteration_bool=True)
         self._response = response
 
 
@@ -363,10 +283,10 @@ class NautilusRequest(BaseRequest):
             "In case you chose to not to use preference information from previous iteration, \n"
             "Please specify as 'preference_method' whether to \n"
             "1. Give directly components for direction of improvement.\n"
-            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as 1,"
-            "and specify other objectives' improvement ratios in relatation to that."
-            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this pair." 
-            "For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
+            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as "
+            "1, and specify other objectives' improvement ratios in relatation to that."
+            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this "
+            "pair. For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
             "Depending on your selection on 'preference_method', please specify either the direct components, "
             "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
 
@@ -550,7 +470,7 @@ class NautilusV2(InteractiveMethod):
             lambda x, _, **y: differential_evolution(x, **y),
             method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
             use_scipy=True
-            )
+        )
 
     def start(self) -> NautilusInitialRequest:
         """
@@ -683,8 +603,10 @@ class NautilusV2(InteractiveMethod):
                 self._xs = np.array(np.concatenate((self._xs, extra_space), axis=None), dtype=object)
                 self._fs = np.array(np.concatenate((self._fs, extra_space), axis=None), dtype=object)
                 self._ds = np.array(np.concatenate((self._ds, extra_space), axis=None), dtype=object)
-                self._lower_bounds = np.array(np.concatenate((self._lower_bounds, extra_space), axis=None), dtype=object)
-                self._upper_bounds = np.array(np.concatenate((self._upper_bounds, extra_space), axis=None), dtype=object)
+                self._lower_bounds = np.array(np.concatenate((self._lower_bounds, extra_space), axis=None),
+                                              dtype=object)
+                self._upper_bounds = np.array(np.concatenate((self._upper_bounds, extra_space), axis=None),
+                                              dtype=object)
 
             self._n_iterations_left = resp["n_iterations"]
 
@@ -962,7 +884,7 @@ class NautilusV2(InteractiveMethod):
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF([1/preference_factors], nadir, utopian, rho=1e-5)
+        asf = ReferencePointASF([1 / preference_factors], nadir, utopian, rho=1e-5)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
@@ -1011,22 +933,23 @@ class NautilusV2(InteractiveMethod):
 
         # set polish to False
         method_e: ScalarMethod = ScalarMethod(
-                lambda x, _, **y: differential_evolution(x, **y),
-                method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-                use_scipy=True
-                )
+            lambda x, _, **y: differential_evolution(x, **y),
+            method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+            use_scipy=True
+        )
 
         # solve new lower bounds for each objective
         for i in range(n_objectives):
-            eps = EpsilonConstraintMethod(objectives,
-                                          i,
-                                          # take out the objective to be minimized
-                                          np.array([val for ind, val in enumerate(epsilons) if ind != i]),
-                                          constraints=constraints)
+            eps = ECM.EpsilonConstraintMethod(objectives,
+                                              i,
+                                              # take out the objective to be minimized
+                                              np.array([val for ind, val in enumerate(epsilons) if ind != i]),
+                                              constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
 
-            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=method_e)
+            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate,
+                                        method=method_e)
             res = minimizer.minimize(x0)
 
             # store objective function values as new lower bounds
@@ -1034,7 +957,8 @@ class NautilusV2(InteractiveMethod):
 
         return new_lower_bounds
 
-    def calculate_distance(self, z_current: np.ndarray, starting_point: np.ndarray, f_current: np.ndarray) -> np.ndarray:
+    def calculate_distance(self, z_current: np.ndarray, starting_point: np.ndarray,
+                           f_current: np.ndarray) -> np.ndarray:
         """
         Calculates the distance from current iteration point to the Pareto optimal set.
 
@@ -1057,6 +981,7 @@ class NautilusV2(InteractiveMethod):
 if __name__ == "__main__":
     print("Nautilus 2")
 
+
     # Objectives
     def f1(xs):
         xs = np.atleast_2d(xs)
@@ -1065,7 +990,8 @@ if __name__ == "__main__":
 
     def f2(xs):
         xs = np.atleast_2d(xs)
-        return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (0.30 / (1.39 - xs[:, 1] ** 2))
+        return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (
+                    0.30 / (1.39 - xs[:, 1] ** 2))
 
 
     def f3(xs):
@@ -1120,7 +1046,7 @@ if __name__ == "__main__":
         "n_iterations": n_iterations,
         "preference_method": 3,  # pairs
         # remember to specify "dtype=object" when using preference method 3.
-        "preference_info": np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)], dtype=object)
+        "preference_info": np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
     }
     print("Step number: 0")
     print("Iteration point: ", nadir)
@@ -1140,7 +1066,7 @@ if __name__ == "__main__":
         "short_step": False,
         "use_previous_preference": False,
         "preference_method": 3,  # deltas directly
-        "preference_info": np.array([((1,3), 0.5), ((2,4), 1), ((2,3), (2/3))], dtype=object),
+        "preference_info": np.array([((1, 3), 0.5), ((2, 4), 1), ((2, 3), (2 / 3))], dtype=object),
 
     }
 
@@ -1181,4 +1107,3 @@ if __name__ == "__main__":
     print(req.content["message"])
     print("Solution: ", req.content["solution"])
     print("Objective function values: ", req.content["objective_vector"])
-
