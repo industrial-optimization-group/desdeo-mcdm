@@ -17,6 +17,11 @@ __all__ = [
     "NimbusMostPreferredRequest",
     "NimbusSaveRequest",
     "NimbusStopRequest",
+    "ReferencePointMethod",
+    "RPMException",
+    "RPMInitialRequest",
+    "RPMRequest",
+    "RPMStopRequest",
 ]
 
 from desdeo_mcdm.interactive.ENautilus import (
@@ -39,4 +44,11 @@ from desdeo_mcdm.interactive.NIMBUS import (
     NimbusMostPreferredRequest,
     NimbusSaveRequest,
     NimbusStopRequest,
+)
+from desdeo_mcdm.interactive.ReferencePointMethod import (
+    RPMException,
+    RPMInitialRequest,
+    RPMRequest,
+    RPMStopRequest,
+    ReferencePointMethod,
 )

@@ -49,7 +49,7 @@ def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np
 
 class RPMInitialRequest(BaseRequest):
     """
-    A request class to handle the initial preferences.
+    A request class to handle the Decision maker's initial preferences for the first iteration round.
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
@@ -109,7 +109,7 @@ class RPMInitialRequest(BaseRequest):
 
 class RPMRequest(BaseRequest):
     """
-    A request class to handle the intermediate requests.
+    A request class to handle the Decision maker's preferences after the first iteration round.
     """
 
     def __init__(
@@ -196,7 +196,47 @@ class RPMStopRequest(BaseRequest):
 
 class ReferencePointMethod(InteractiveMethod):
     """
-    TODO: Docstring
+    In reference point method, the Decision maker (DM) specifies **desirable aspiration levels** for objective
+    functions. Vectors formed of these aspiration levels are then used to derive scalarizing functions having minimal
+    values at weakly, properly or Pareto optimal solutions. It is important that reference points are intuitive and easy
+    for the DM to specify their consistecy is not an essential requirement. Before the solution process starts, some
+    information is given to the decision maker about the problem. If possible, the ideal objective vector and the
+    (approximated) nadir objective vector are presented.
+
+    At each iteration, the DM is asked to give desired aspiration levels for objective functions. Using this information
+    to formulate a **reference point**, achievement function is minimized and a (weakly, properly or) Pareto optimal
+    solution obtained. This is then presented to the DM. In addition, number of k other (weakly, properly or) Pareto
+    optimal solutions are calculated using **perturbed refererence points**, where k equals the number of objectives in
+    problem. The alternative solutions are also presented to the DM. If (s)he finds any of the k + 1 solutions
+    satisfactory, the solution process is ended. Otherwise, the DM is asked to present a new reference point and the
+    iteration described above is repeated.
+
+    The idea in perturbed reference points is that the DM gets **better understanding** of the possible solutions around
+    the current solution. If the reference point is far from the Pareto optimal set, the DM gets a **wider** description
+    of the Pareto optimal set and if the reference point is near the Pareto optimal set, then a **finer** description of
+    the Pareto optimal set is given.
+
+    In this method, the DM has to specify aspiration levels and compare objective vectors. The DM is **free to change**
+    her/his mind during the process and can direct the solution process without being forced to understand complicated
+    concepts and their meaning. On the other hand, the method does not necessarily help the DM to find more satisfactory
+    solutions.
+
+    Args:
+        problem (MOProblem): Problem to be solved.
+        ideal (np.ndarray): The ideal objective vector of the problem.
+        nadir (np.ndarray): The nadir objective vector of the problem. This may also be the "worst" objective vector
+                            provided by the Decision maker if the approximation of Nadir vector is not applicable or if
+                            the Decision maker wishes to provide even worse objective vector than what the
+                            approximated Nadir vector is.
+        epsilon (float): A small number used in calculating the utopian point.
+        objective_names (Optional[List[str]], optional): Names of the objectives. List must match the number of columns
+                                                         in ideal.
+        minimize (Optional[List[int]], optional): Multipliers for each objective. '-1' indicates maximization
+                                                  and '1' minimization. Defaults to all objective values being
+                                                  minimized.
+
+    Raises:
+        RPMException: Dimensions of ideal, nadir, objective_names, and minimize-list do not match.
     """
 
     def __init__(
@@ -303,7 +343,7 @@ class ReferencePointMethod(InteractiveMethod):
 
     def handle_initial_request(self, request: RPMInitialRequest) -> RPMRequest:
         """
-        Handles the initial request by parsing the response appropiately.
+        Handles the initial request by parsing the response appropriately.
 
         Args:
             request (RPMInitialRequest): Initial request including Decision maker's initial preferences.
@@ -348,7 +388,7 @@ class ReferencePointMethod(InteractiveMethod):
 
     def handle_request(self, request: RPMRequest) -> Union[RPMRequest, RPMStopRequest]:
         """
-        Handle Decision maker's intermediate requests.
+        Handle Decision maker's requests after the first iteration round, so called **intermediate requests.**
 
         Args:
             request (RPMRequest): Intermediate request including Decision maker's response.
@@ -445,7 +485,7 @@ class ReferencePointMethod(InteractiveMethod):
     def solve_asf(self,
                   ref_point: np.ndarray,
                   x0: np.ndarray,
-                  preference_factors: np.ndarray,
+                  preferential_factors: np.ndarray,
                   nadir: np.ndarray,
                   utopian: np.ndarray,
                   objectives: Callable,
@@ -457,8 +497,8 @@ class ReferencePointMethod(InteractiveMethod):
 
         Args:
             ref_point (np.ndarray): Reference point.
-            x0 (np.ndarray): Initial values for decison variables.
-            preference_factors (np.ndarray): Preference factors on how much would the decision maker wish to improve
+            x0 (np.ndarray): Initial values for decision variables.
+            preferential_factors (np.ndarray): Preferential factors on how much would the decision maker wish to improve
                                              the values of each objective function.
             nadir (np.ndarray): Nadir vector.
             utopian (np.ndarray): Utopian vector.
@@ -469,12 +509,12 @@ class ReferencePointMethod(InteractiveMethod):
 
         Returns:
             dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
-            'fun' the optimal value of the optimized functoin, and 'success' a boolean indicating whether
+            'fun' the optimal value of the optimized function, and 'success' a boolean indicating whether
             the optimization was conducted successfully.
         """
 
         # scalarize problem using reference point
-        asf = ReferencePointASF(preference_factors, nadir, utopian, rho=1e-4)
+        asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-4)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
@@ -488,7 +528,6 @@ class ReferencePointMethod(InteractiveMethod):
 # testing the method
 if __name__ == "__main__":
     print("Reference point method")
-
 
     # Objectives
     def f1(xs):
@@ -538,7 +577,6 @@ if __name__ == "__main__":
     # solved in Nautilus.py
     ideal = np.array([-6.34, -3.44487179, -7.5, 0])
     nadir = np.array([-4.751, -2.86054116, -0.32111111, 9.70666666])
-
 
     # start solving
     method = ReferencePointMethod(problem=prob, ideal=ideal, nadir=nadir)
