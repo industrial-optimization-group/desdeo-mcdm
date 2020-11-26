@@ -176,7 +176,7 @@ class NautilusException(Exception):
 
 class NautilusInitialRequest(BaseRequest):
     """
-    A request class to handle the initial preferences.
+    A request class to handle the Decision maker's initial preferences for the first iteration round.
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
@@ -243,7 +243,7 @@ class NautilusInitialRequest(BaseRequest):
 
 class NautilusRequest(BaseRequest):
     """
-    A request class to handle the intermediate requests.
+    A request class to handle the Decision maker's preferences after the first iteration round.
     """
 
     def __init__(
@@ -589,7 +589,7 @@ class NautilusV2(InteractiveMethod):
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
         """
-        Handle Decision maker's intermediate requests.
+        Handle Decision maker's requests after the first iteration round, so called **intermediate requests.**
 
         Args:
             request (NautilusRequest): Intermediate request including Decision maker's response.
