@@ -27,7 +27,7 @@ class RPMException(Exception):
     pass
 
 
-def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray):
+def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray) -> None:
     """
     Validate Decion maker's reference point.
 
@@ -37,6 +37,9 @@ def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np
         nadir (np.ndarray): Nadir vector.
 
     Returns:
+
+    Raises:
+        RPMException: In case reference point is invalid.
 
     """
 
@@ -52,7 +55,7 @@ class RPMInitialRequest(BaseRequest):
     A request class to handle the Decision maker's initial preferences for the first iteration round.
     """
 
-    def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
+    def __init__(self, ideal: np.ndarray, nadir: np.ndarray) -> None:
         """
         Initialize with ideal and nadir vectors.
 
@@ -96,6 +99,9 @@ class RPMInitialRequest(BaseRequest):
 
         Args:
             response (Dict): Decision maker's response.
+
+        Raises:
+            RPMException: In case reference point is missing.
         """
 
         if 'reference_point' not in response:
@@ -118,13 +124,15 @@ class RPMRequest(BaseRequest):
             f_additionals: np.ndarray,
             ideal: np.ndarray,
             nadir: np.ndarray,
-    ):
+    ) -> None:
         """
         Initialize request with current iterations's solution process information.
 
         Args:
             f_current (np.ndarray): Current solution.
             f_additionals (np.ndarray): Additional solutions.
+            ideal (np.ndarray): Idea vector.
+            nadir (np.ndarray): Nadir vector.
         """
 
         self._f_current = f_current
@@ -155,6 +163,9 @@ class RPMRequest(BaseRequest):
 
         Args:
             response (Dict): Decision maker's response.
+
+        Raises:
+            RPMException: In case response is invalid.
         """
 
         if 'satisfied' in response and response['satisfied']:
@@ -456,7 +467,7 @@ class ReferencePointMethod(InteractiveMethod):
                 self._fs[self._h], self._afs[self._h], self._ideal, self._nadir
             )
 
-    def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray):
+    def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
         Calculate perturbed reference points.
 
