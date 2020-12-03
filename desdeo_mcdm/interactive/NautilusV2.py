@@ -800,7 +800,7 @@ class NautilusV2(InteractiveMethod):
 
         Returns:
             np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in
-                        achievement scalarizing function.
+            achievement scalarizing function.
 
         Examples:
             >>> n_objectives = 4
@@ -836,7 +836,8 @@ class NautilusV2(InteractiveMethod):
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
                                     function.
 
-        Returns: np.ndarray: Direction of improvement.
+        Returns:
+            np.ndarray: Direction of improvement.
 
         """
 
@@ -957,7 +958,7 @@ class NautilusV2(InteractiveMethod):
             method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
-            new_lower_bounds (np.ndarray): New lower bounds for objective functions.
+            np.ndarray: New lower bounds for objective functions.
         """
 
         new_lower_bounds: np.ndarray = [None] * n_objectives
