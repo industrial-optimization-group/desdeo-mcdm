@@ -342,12 +342,12 @@ class NautilusV2(InteractiveMethod):
 
     Similarly to NAUTILUS, starting from the nadir point,
     a solution is obtained at each iteration which dominates the previous one.
-    Although only the last solution will be Pareto optimal, the decision maker never looses sight of the
+    Although only the last solution will be Pareto optimal, the Decision Maker (DM) never looses sight of the
     Pareto optimal set, and the search is oriented so that (s)he progressively focusses on the preferred part of
     the Pareto optimal set. Each new solution is obtained by minimizing an achievement scalarizing function including
     preferences about desired improvements in objective function values.
 
-    NAUTILUS 2 introduces a new preference handeling technique which is easily understandable for the DM and allows
+    NAUTILUS 2 introduces a new preference handling technique which is easily understandable for the DM and allows
     the DM to conveniently control the solution process. Preferences are given as direction of improvement for
     objectives. In NAUTILUS 2, the DM has **three ways** to do this:
 
@@ -366,10 +366,10 @@ class NautilusV2(InteractiveMethod):
     As with NAUTILUS, after each iteration round, the decision maker specifies whether (s)he wishes to continue with the
     previous preference information, or define a new one.
 
-    In addition to this, the decision maker can influence the solution finding process by taking a **step back** to
-    previous iteration point. This enables the decision maker to provide new preferences and change the direction of
+    In addition to this, the decision maker can influence the solution finding process by taking a **step back** to the
+    previous iteration point. This enables the decision maker to provide new preferences and change the direction of the
     solution seeking process. Furthermore, the decision maker can also take a **half-step** in case (s)he feels that a
-    full step limits the reachable area of Pareto optimal set too much.
+    full step limits the reachable area of the Pareto optimal set too much.
 
 
     Args:
@@ -377,7 +377,7 @@ class NautilusV2(InteractiveMethod):
         starting_point (np.ndarray): Objective vector used as a starting point for method.
         ideal (np.ndarray): The ideal objective vector of the problem being represented by the Pareto front.
         nadir (np.ndarray): The nadir objective vector of the problem being represented by the Pareto front.
-        epsilon (float): A small number used in calculating the utopian point.
+        epsilon (float): A small number used in calculating the utopian point. By default 1e-6.
         objective_names (Optional[List[str]], optional): Names of the objectives. List must match the number of columns
                                                          in ideal.
         minimize (Optional[List[int]], optional): Multipliers for each objective. '-1' indicates maximization
@@ -438,7 +438,7 @@ class NautilusV2(InteractiveMethod):
         self._starting_point = starting_point
 
         # calculate utopian vector
-        self._utopian = [ideal_i - self._epsilon for ideal_i in self._ideal]
+        self._utopian = np.array([ideal_i - self._epsilon for ideal_i in self._ideal])
 
         # bounds of the reachable region
         self._lower_bounds: List[np.ndarray] = []
@@ -589,7 +589,7 @@ class NautilusV2(InteractiveMethod):
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
         """
-        Handle Decision maker's requests after the first iteration round, so called **intermediate requests.**
+        Handle Decision maker's requests after the first iteration round, so-called **intermediate requests.**
 
         Args:
             request (NautilusRequest): Intermediate request including Decision maker's response.
@@ -763,43 +763,18 @@ class NautilusV2(InteractiveMethod):
 
         Args:
             n_objectives (int): Number of objectives in problem.
-            pref_method (int): Preference information method (either direction of improvement (1), improvement ratios
+            pref_method (int): Preference information method, either: Direction of improvement (1), improvement ratios
                                between a selected objective and rest of the objectives (2), or improvement ratios freely
-                               for some selected pairs of objectives (3).).
+                               for some selected pairs of objectives (3).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
-                                    function.
-                                    The Decision maker has **three ways** to do this:
-
-                                    1. The DM sets the **direction of improvement directly**.
-                                       Example input could be:
-
-                                            ``np.array([0.3, 0.5, 0.4, 2])``, if n_objectives == 4.
-
-                                    2. The DM defines the **improvement ratio** between two different objectives fi and
-                                       fj. For example, if the DM wishes that the improvement of fi by one unit should
-                                       be accompanied with the improvement of fj by θij units. Here, the DM selects an
-                                       objective fi (i=1,…,k) and for each of the other objectives fj sets the value
-                                       θij. Then, the direction of improvement is defined by
-
-                                            ``δi=1 and δj=θij, j≠i.``
-
-                                       Example input could be:
-
-                                            ``np.array([1, 1.5, 0.5, (2/7)])``, if n_objectives == 4.
-
-                                    3. As a generalization of the approach 2, the DM sets values of improvement ratios
-                                       freely for some **selected pairs** of objective functions.
-                                       Example input could be:
-
-                                            ``np.array([((1,2), 0.5), ((3,4), 1), ((2,3), 1.5)], dtype=object)``, if
-                                            n_objectives == 4.
+                                    function. **See examples below**.
 
                                     Note:
                                         Remember to specify "dtype=object" in **pref_info array** when using preference
                                         method 3.
 
         Returns:
-            np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in
+            np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in the
             achievement scalarizing function.
 
         Examples:
@@ -890,11 +865,11 @@ class NautilusV2(InteractiveMethod):
                   nadir: np.ndarray,
                   utopian: np.ndarray,
                   objectives: Callable,
-                  variable_bounds: Optional[np.ndarray],
-                  method: Union[ScalarMethod, str, None]
+                  variable_bounds: Optional[np.ndarray] = None,
+                  method: Union[ScalarMethod, str, None] = None
                   ) -> dict:
         """
-        Solve Achievement scalarizing function.
+        Solve achievement scalarizing function.
 
         Args:
             ref_point (np.ndarray): Reference point.
@@ -904,9 +879,9 @@ class NautilusV2(InteractiveMethod):
             nadir (np.ndarray): Nadir vector.
             utopian (np.ndarray): Utopian vector.
             objectives (np.ndarray): The objective function values for each input vector.
-            variable_bounds (Optional[np.ndarray): Lower and upper bounds of each variable
+            variable_bounds (Optional[np.ndarray]): Lower and upper bounds of each variable
                                                    as a 2D numpy array. If undefined variables, None instead.
-            method (Union[ScalarMethod, str, None): The optimization method the scalarizer should be minimized with
+            method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with
 
         Returns:
             Dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
@@ -914,6 +889,10 @@ class NautilusV2(InteractiveMethod):
             the optimization was conducted successfully.
 
         """
+
+        if variable_bounds is None:
+            # set all bounds as [-inf, inf]
+            variable_bounds = np.array([[-np.inf, np.inf]] * x0.shape[0])
 
         # scalarize problem using reference point
         asf = ReferencePointASF([1 / preferential_factors], nadir, utopian, rho=1e-5)
@@ -953,7 +932,7 @@ class NautilusV2(InteractiveMethod):
             n_objectives (int): Total number of objectives.
             x0 (np.ndarray): Initial values for decision variables.
             epsilons (np.ndarray): Previous iteration point.
-            bounds (Union[np.ndarray, None): Bounds for decision variables.
+            bounds (Union[np.ndarray, None]): Bounds for decision variables.
             constraints (Callable): Constraints of the problem.
             method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
@@ -1052,9 +1031,9 @@ if __name__ == "__main__":
 
     initial_values = np.array([0.5, 0.5])
     lower_bounds = [0.3, 0.3]
-    upper_bounds = [1.0, 1.0]
+    upper_bounds = [1, 1]
     bounds = np.stack((lower_bounds, upper_bounds))
-    variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
+    variables = variable_builder(var_names, initial_values, upper_bounds=upper_bounds, lower_bounds=lower_bounds)
 
     # problem
     prob = MOProblem(objectives=[obj1, obj2, obj3, obj4], variables=variables)  # objectives "seperately"
