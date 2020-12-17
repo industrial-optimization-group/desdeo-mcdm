@@ -767,11 +767,7 @@ class NautilusV2(InteractiveMethod):
                                between a selected objective and rest of the objectives (2), or improvement ratios freely
                                for some selected pairs of objectives (3).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
-                                    function. **See examples below**.
-
-                                    Note:
-                                        Remember to specify "dtype=object" in **pref_info array** when using preference
-                                        method 3.
+                                    function. **See the examples below**.
 
         Returns:
             np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in the
@@ -783,16 +779,23 @@ class NautilusV2(InteractiveMethod):
             >>> pref_info = np.array([1, 2, 1, 2]),  # second and fourth objective are the most important to improve
             >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
             np.array([1, 2, 1, 2])
+
             >>> n_objectives = 4
             >>> pref_method = 2  # improvement ratios between one selected objective and each other objective
             >>> pref_info = np.array([1, 1.5, (7/3), 0.5])  # first objective's ratio is set to one
             >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
             np.array([1, 1.5, (7/3), 0.5])
+
             >>> n_objectives = 4
             >>> pref_method = 3  # improvement ratios between freely selected pairs of objectives
+            # format the tuples like this: (('index of objective', 'index of objective'), 'improvement ratio between the objectives')
             >>> pref_info = np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
             >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
             np.array([1., 0.5, 0.75, 0.75])
+
+        Note:
+            Remember to specify "dtype=object" in **pref_info** array when using preference
+            method 3.
 
         """
 
@@ -881,7 +884,7 @@ class NautilusV2(InteractiveMethod):
             objectives (np.ndarray): The objective function values for each input vector.
             variable_bounds (Optional[np.ndarray]): Lower and upper bounds of each variable
                                                    as a 2D numpy array. If undefined variables, None instead.
-            method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with
+            method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
             Dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
