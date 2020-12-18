@@ -13,7 +13,7 @@ Nautilus
       ~Nautilus.calculate_bounds
       ~Nautilus.calculate_distance
       ~Nautilus.calculate_iteration_point
-      ~Nautilus.calculate_preference_factors
+      ~Nautilus.calculate_preferential_factors
       ~Nautilus.handle_initial_request
       ~Nautilus.handle_request
       ~Nautilus.iterate
@@ -25,12 +25,13 @@ Nautilus
    .. automethod:: calculate_bounds
    .. automethod:: calculate_distance
    .. automethod:: calculate_iteration_point
-   .. automethod:: calculate_preference_factors
+   .. automethod:: calculate_preferential_factors
    .. automethod:: handle_initial_request
    .. automethod:: handle_request
    .. automethod:: iterate
    .. automethod:: solve_asf
    .. automethod:: start
 
-   .. _article: https://www.sciencedirect.com/science/article/pii/S0377221710001785
-   __ article_
+   .. |Miettinen_2010| raw:: html
+
+      <a href="http://www.sciencedirect.com/science/article/pii/S0377221710001785" target="_blank">Miettinen 2010</a>
