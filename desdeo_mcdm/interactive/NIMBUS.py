@@ -729,7 +729,7 @@ class NIMBUS(InteractiveMethod):
 
             res_1 = f_current[improve_inds] - f[improve_inds]
             res_2 = f_current[improve_until_inds] - f[improve_until_inds]
-            res_3 = levels[impaire_until_inds] - f_current[impaire_until_inds]
+            res_3 = levels[impaire_until_inds] - f[impaire_until_inds]
 
             res = np.hstack((res_1, res_2, res_3))
 
@@ -927,6 +927,7 @@ class NIMBUS(InteractiveMethod):
 
 
 if __name__ == "__main__":
+    """
     from desdeo_problem.Objective import _ScalarObjective
     from desdeo_problem.Variable import variable_builder
     from desdeo_problem.Constraint import ScalarConstraint
@@ -990,3 +991,107 @@ if __name__ == "__main__":
     res_3.response = response_pref
 
     res_4 = method.iterate(res_3)
+    """
+
+    import matplotlib.pyplot as plt
+    from desdeo_problem.Variable import variable_builder
+    from desdeo_problem.Objective import _ScalarObjective
+
+    def f_1(xs: np.ndarray):
+        xs = np.atleast_2d(xs)
+        xs_plusone = np.roll(xs, 1, axis=1)
+        return np.sum(-10*np.exp(-0.2*np.sqrt(xs[:, :-1]**2 + xs_plusone[:, :-1]**2)), axis=1)
+
+    def f_2(xs: np.ndarray):
+        xs = np.atleast_2d(xs)
+        return np.sum(np.abs(xs)**0.8 + 5*np.sin(xs**3), axis=1)
+
+    varsl = variable_builder(
+        ["x_1", "x_2", "x_3"],
+        initial_values=[0, 0, 0],
+        lower_bounds=[-5, -5, -5],
+        upper_bounds=[5, 5, 5],
+    )
+
+    f1 = _ScalarObjective(name="f1", evaluator=f_1)
+    f2 = _ScalarObjective(name="f2", evaluator=f_2)
+
+    #For AI_DM ranges are always defined as IDEAL, NADIR.
+    f1_range = [-20, -14]
+    f2_range = [-14, 0.5]
+    x1 = np.linspace(min(f1_range), max(f1_range), 1000)
+    x2 = np.linspace(min(f2_range), max(f2_range), 1000)
+    y = np.linspace(0, 0, 1000)
+
+
+
+    problem = MOProblem(variables=varsl, objectives=[f1, f2], ideal=np.array([-20, -12]), nadir=np.array([-14, 0.5]))
+
+    from desdeo_mcdm.interactive.NIMBUS import NIMBUS
+    from scipy.optimize import minimize, differential_evolution
+
+
+    scalar_method = ScalarMethod(lambda x, _, **y: differential_evolution(x, **y), use_scipy=True,
+            method_args={"polish": True, "disp": True})
+
+    method = NIMBUS(problem, scalar_method)
+
+    classification_request, plot_request = method.start()
+
+    # print(classification_request.content.keys())
+    # print(classification_request.content["message"])
+
+    print(classification_request.content["objective_values"])
+
+    #Ploting F1!
+    plt.scatter(x1, y, label="Range")
+    plt.scatter(-15, 0, label="P1", c='r')
+    plt.scatter(-18, 0, label="P2", c='r')
+    plt.scatter(classification_request.content["objective_values"][0], 0, label = "Present Position")
+    plt.xlabel("Objective Function")
+    plt.ylabel("Value")
+    plt.title("Objective Function F1")
+
+    plt.show()
+
+    #Ploting F2!
+    plt.scatter(x2, y, label="Range")
+    plt.scatter(-6, 0, label="P1", c='r')
+    plt.scatter(-9, 0, label="P2", c='r')
+    plt.scatter(classification_request.content["objective_values"][1], 0, label = "Present Position")
+    plt.xlabel("Objective Function")
+    plt.ylabel("Value")
+    plt.title("Objective Function F2")
+
+    plt.show()
+
+    response = {'classifications': ['<', '>='], 'levels': [0, -7.133133133133133], 'number_of_solutions': 1}
+    classification_request.response = response
+
+    save_request, plot_request = method.iterate(classification_request)
+
+    print(save_request.content["objectives"])
+    print(save_request.content["solutions"])
+
+    #Ploting F1!
+    plt.scatter(x1, y, label="Range")
+    plt.scatter(-15, 0, label="P1", c='r')
+    plt.scatter(-18, 0, label="P2", c='r')
+    plt.scatter(save_request.content["objectives"][0][0], 0, label = "Present Position")
+    plt.xlabel("Objective Function")
+    plt.ylabel("Value")
+    plt.title("Objective Function F1")
+
+    plt.show()
+
+    #Ploting F2!
+    plt.scatter(x2, y, label="Range")
+    plt.scatter(-6, 0, label="P1", c='r')
+    plt.scatter(-9, 0, label="P2", c='r')
+    plt.scatter(save_request.content["objectives"][0][1], 0, label = "Present Position")
+    plt.xlabel("Objective Function")
+    plt.ylabel("Value")
+    plt.title("Objective Function F2")
+
+    plt.show()
+

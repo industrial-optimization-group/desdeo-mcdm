@@ -20,6 +20,7 @@ Documentation for this package can be found [here](https://desdeo-mcdm.readthedo
 - Synchronous NIMBUS
 - NAUTILUS Navigator
 - E-NAUTILUS
+- NAUTILUS
 
 ## Coming soon
 
