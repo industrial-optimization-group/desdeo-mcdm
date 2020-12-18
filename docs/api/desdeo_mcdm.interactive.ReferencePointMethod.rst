@@ -25,3 +25,7 @@ ReferencePointMethod
    .. automethod:: iterate
    .. automethod:: solve_asf
    .. automethod:: start
+
+   .. |Wierzbicki_1982| raw:: html
+
+      <a href="https://www.sciencedirect.com/science/article/pii/0270025582900380" target="_blank">Wierzbicki 1982</a>

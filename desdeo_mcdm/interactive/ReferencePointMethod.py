@@ -52,7 +52,7 @@ def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np
 
 class RPMInitialRequest(BaseRequest):
     """
-    A request class to handle the Decision maker's initial preferences for the first iteration round.
+    A request class to handle the Decision Maker's initial preferences for the first iteration round.
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray) -> None:
@@ -95,10 +95,10 @@ class RPMInitialRequest(BaseRequest):
     @BaseRequest.response.setter
     def response(self, response: Dict) -> None:
         """
-        Set Decision maker's response information for initial request.
+        Set the Decision Maker's response information for initial request.
 
         Args:
-            response (Dict): Decision maker's response.
+            response (Dict): The Decision Maker's response.
 
         Raises:
             RPMException: In case reference point is missing.
@@ -115,7 +115,7 @@ class RPMInitialRequest(BaseRequest):
 
 class RPMRequest(BaseRequest):
     """
-    A request class to handle the Decision maker's preferences after the first iteration round.
+    A request class to handle the Decision Maker's preferences after the first iteration round.
     """
 
     def __init__(
@@ -159,10 +159,10 @@ class RPMRequest(BaseRequest):
     @BaseRequest.response.setter
     def response(self, response: Dict) -> None:
         """
-        Set Decision maker's response information for request.
+        Set the Decision Maker's response information for request.
 
         Args:
-            response (Dict): Decision maker's response.
+            response (Dict): The Decision Maker's response.
 
         Raises:
             RPMException: In case response is invalid.
@@ -207,20 +207,22 @@ class RPMStopRequest(BaseRequest):
 
 class ReferencePointMethod(InteractiveMethod):
     """
-    In reference point method, the Decision maker (DM) specifies **desirable aspiration levels** for objective
+    Implements the Reference Point Method as presented in |Wierzbicki_1982|.
+
+    In the Reference Point Method, the Decision Maker (DM) specifies **desirable aspiration levels** for objective
     functions. Vectors formed of these aspiration levels are then used to derive scalarizing functions having minimal
     values at weakly, properly or Pareto optimal solutions. It is important that reference points are intuitive and easy
-    for the DM to specify their consistecy is not an essential requirement. Before the solution process starts, some
-    information is given to the decision maker about the problem. If possible, the ideal objective vector and the
+    for the DM to specify, their consistency is not an essential requirement. Before the solution process starts, some
+    information is given to the DM about the problem. If possible, the ideal objective vector and the
     (approximated) nadir objective vector are presented.
 
-    At each iteration, the DM is asked to give desired aspiration levels for objective functions. Using this information
-    to formulate a **reference point**, achievement function is minimized and a (weakly, properly or) Pareto optimal
-    solution obtained. This is then presented to the DM. In addition, number of k other (weakly, properly or) Pareto
-    optimal solutions are calculated using **perturbed refererence points**, where k equals the number of objectives in
-    problem. The alternative solutions are also presented to the DM. If (s)he finds any of the k + 1 solutions
-    satisfactory, the solution process is ended. Otherwise, the DM is asked to present a new reference point and the
-    iteration described above is repeated.
+    At each iteration, the DM is asked to give desired aspiration levels for the objective functions. Using this
+    information to formulate a **reference point**, achievement function is minimized and a (weakly, properly or) Pareto
+    optimal solution is obtained. This solution is then presented to the DM. In addition, k other (weakly,
+    properly or) Pareto optimal solutions are calculated using **perturbed reference points**, where k is the
+    number of objectives in the problem. The alternative solutions are also presented to the DM. If (s)he finds any of
+    the k + 1 solutions satisfactory, the solution process is ended. Otherwise, the DM is asked to present a new
+    reference point and the iteration described above is repeated.
 
     The idea in perturbed reference points is that the DM gets **better understanding** of the possible solutions around
     the current solution. If the reference point is far from the Pareto optimal set, the DM gets a **wider** description
@@ -236,12 +238,13 @@ class ReferencePointMethod(InteractiveMethod):
         problem (MOProblem): Problem to be solved.
         ideal (np.ndarray): The ideal objective vector of the problem.
         nadir (np.ndarray): The nadir objective vector of the problem. This may also be the "worst" objective vector
-                            provided by the Decision maker if the approximation of Nadir vector is not applicable or if
-                            the Decision maker wishes to provide even worse objective vector than what the
+                            provided by the Decision Maker if the approximation of Nadir vector is not applicable or if
+                            the Decision Maker wishes to provide even worse objective vector than what the
                             approximated Nadir vector is.
         epsilon (float): A small number used in calculating the utopian point.
-        objective_names (Optional[List[str]], optional): Names of the objectives. List must match the number of columns
-                                                         in ideal.
+        epsilon (float): A small number used in calculating the utopian point. Default value is 1e-6.
+        objective_names (Optional[List[str]], optional): Names of the objectives. The length of the list must match the
+                                                         number of elements in ideal vector.
         minimize (Optional[List[int]], optional): Multipliers for each objective. '-1' indicates maximization
                                                   and '1' minimization. Defaults to all objective values being
                                                   minimized.
@@ -255,7 +258,7 @@ class ReferencePointMethod(InteractiveMethod):
             problem: MOProblem,
             ideal: np.ndarray,
             nadir: np.ndarray,
-            epsilon: float = 1e-4,
+            epsilon: float = 1e-6,
             objective_names: Optional[List[str]] = None,
             minimize: Optional[List[int]] = None,
     ):
@@ -340,7 +343,7 @@ class ReferencePointMethod(InteractiveMethod):
             request (Union[RPMInitialRequest, RPMRequest]): Either initial or intermediate request.
 
         Returns:
-            Union[RPMRequest, RPMStopRequest]: A new request with content depending on the Decision maker's
+            Union[RPMRequest, RPMStopRequest]: A new request with content depending on the Decision Maker's
             preferences.
         """
 
@@ -357,7 +360,7 @@ class ReferencePointMethod(InteractiveMethod):
         Handles the initial request by parsing the response appropriately.
 
         Args:
-            request (RPMInitialRequest): Initial request including Decision maker's initial preferences.
+            request (RPMInitialRequest): Initial request including the Decision Maker's initial preferences.
 
         Returns:
             RPMRequest: New request with updated solution process information.
@@ -399,10 +402,10 @@ class ReferencePointMethod(InteractiveMethod):
 
     def handle_request(self, request: RPMRequest) -> Union[RPMRequest, RPMStopRequest]:
         """
-        Handle Decision maker's requests after the first iteration round, so called **intermediate requests.**
+        Handle the Decision Maker's requests after the first iteration round, so-called **intermediate requests.**
 
         Args:
-            request (RPMRequest): Intermediate request including Decision maker's response.
+            request (RPMRequest): Intermediate request including the Decision Maker's response.
 
         Returns:
             Union[RPMRequest, RPMStopRequest]: In case last iteration, request to stop the solution process.
@@ -500,8 +503,8 @@ class ReferencePointMethod(InteractiveMethod):
                   nadir: np.ndarray,
                   utopian: np.ndarray,
                   objectives: Callable,
-                  variable_bounds: Optional[np.ndarray],
-                  method: Union[ScalarMethod, str, None]
+                  variable_bounds: Optional[np.ndarray] = None,
+                  method: Union[ScalarMethod, str, None] = None
                   ) -> dict:
         """
         Solve Achievement scalarizing function.
@@ -509,20 +512,24 @@ class ReferencePointMethod(InteractiveMethod):
         Args:
             ref_point (np.ndarray): Reference point.
             x0 (np.ndarray): Initial values for decision variables.
-            preferential_factors (np.ndarray): Preferential factors on how much would the decision maker wish to improve
+            preferential_factors (np.ndarray): Preferential factors on how much would the Decision Maker wish to improve
                                              the values of each objective function.
             nadir (np.ndarray): Nadir vector.
             utopian (np.ndarray): Utopian vector.
             objectives (np.ndarray): The objective function values for each input vector.
-            variable_bounds (Optional[np.ndarray): Lower and upper bounds of each variable
+            variable_bounds (Optional[np.ndarray)]: Lower and upper bounds of each variable
                                                    as a 2D numpy array. If undefined variables, None instead.
-            method (Union[ScalarMethod, str, None): The optimization method the scalarizer should be minimized with
+            method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
             dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
             'fun' the optimal value of the optimized function, and 'success' a boolean indicating whether
             the optimization was conducted successfully.
         """
+
+        if variable_bounds is None:
+            # set all bounds as [-inf, inf]
+            variable_bounds = np.array([[-np.inf, np.inf]] * x0.shape[0])
 
         # scalarize problem using reference point
         asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-4)
