@@ -379,7 +379,7 @@ class NautilusV2(InteractiveMethod):
         nadir (np.ndarray): The nadir objective vector of the problem being represented by the Pareto front.
         epsilon (float): A small number used in calculating the utopian point. By default 1e-6.
         objective_names (Optional[List[str]], optional): Names of the objectives. The length of the list must match the
-                                                         number of columns in ideal.
+                                                         number elements in the ideal vector.
         minimize (Optional[List[int]], optional): Multipliers for each objective. '-1' indicates maximization
                                                   and '1' minimization. Defaults to all objective values being
                                                   minimized.
