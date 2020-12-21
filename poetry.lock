@@ -245,7 +245,6 @@ optional = false
 python-versions = ">=3.7,<4.0"
 version = "1.1"
 
-
 [package.dependencies]
 numpy = ">=1.17,<2.0"
 pandas = ">=0.25.3,<0.26.0"
