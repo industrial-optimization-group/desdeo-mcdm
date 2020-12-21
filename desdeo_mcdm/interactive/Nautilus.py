@@ -493,7 +493,7 @@ class Nautilus(InteractiveMethod):
         self._preference_method: int = request.response["preference_method"]
         self._preference_info: np.ndarray = request.response["preference_info"]
         self._preferential_factors = self.calculate_preferential_factors(self._preference_method, self._preference_info,
-                                                                     self._nadir, self._utopian)
+                                                                         self._nadir, self._utopian)
 
         # set reference point, initial values for decision variables, lower and upper bounds for objective functions
         self._q = self._zs[self._step_number - 1]
@@ -589,8 +589,8 @@ class Nautilus(InteractiveMethod):
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
                 self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
-                                                                             self._preference_info,
-                                                                             self._nadir, self._utopian)
+                                                                                 self._preference_info,
+                                                                                 self._nadir, self._utopian)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
@@ -665,8 +665,8 @@ class Nautilus(InteractiveMethod):
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
                 self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
-                                                                             self._preference_info,
-                                                                             self._nadir, self._utopian)
+                                                                                 self._preference_info,
+                                                                                 self._nadir, self._utopian)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
@@ -704,7 +704,7 @@ class Nautilus(InteractiveMethod):
                 )
 
     def calculate_preferential_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
-                                     utopian: np.ndarray) -> np.ndarray:
+                                       utopian: np.ndarray) -> np.ndarray:
         """
         Calculate preferential factors based on the Decision maker's preference information. These preferential
         factors are used as weights for objectives when solving an Achievement scalarizing function. The Decision maker
@@ -1015,7 +1015,7 @@ if __name__ == "__main__":
         "preference_method": 2,
         "preference_info": np.array([30, 70]),
     }
-    
+
     # 5. continue with the same preferences
     while method._n_iterations_left > 1:
         req = method.iterate(req)

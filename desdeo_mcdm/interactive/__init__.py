@@ -8,8 +8,10 @@ __all__ = [
     "ENautilusRequest",
     "ENautilusStopRequest",
     "validate_response",
+    "validate_n1_preferences",
     "validate_n2_preferences",
     "validate_n_iterations",
+    "Nautilus",
     "NautilusV2",
     "NautilusException",
     "NautilusInitialRequest",
@@ -38,6 +40,17 @@ from desdeo_mcdm.interactive.ENautilus import (
     ENautilusInitialRequest,
     ENautilusRequest,
     ENautilusStopRequest,
+)
+
+from desdeo_mcdm.interactive.Nautilus import (
+    validate_response,
+    validate_n1_preferences,
+    validate_n_iterations,
+    Nautilus,
+    NautilusException,
+    NautilusInitialRequest,
+    NautilusRequest,
+    NautilusStopRequest
 )
 
 from desdeo_mcdm.interactive.NautilusV2 import (
