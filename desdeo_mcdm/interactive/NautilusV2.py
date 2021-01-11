@@ -1,5 +1,5 @@
 """
-NAUTILUS 1
+Nautilus version 2
 """
 from typing import Dict, List, Optional, Union, Callable
 
@@ -10,8 +10,8 @@ from desdeo_problem.Objective import VectorObjective, _ScalarObjective
 from desdeo_problem.Problem import MOProblem
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
-from desdeo_tools.scalarization import EpsilonConstraintMethod as ECM
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
+from desdeo_tools.scalarization import EpsilonConstraintMethod as ECM
 from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
 
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
@@ -45,21 +45,21 @@ def validate_response(n_objectives: int,
             raise NautilusException("Cannot take a step back on first iteration.")
         if "use_previous_preference" in response:
             raise NautilusException("Cannot use previous preferences on first iteration.")
-        validate_preferences(n_objectives, response)
+        validate_n2_preferences(n_objectives, response)
     else:
         # if current iteration point is nadir point
         if response["step_back"] and np.array_equal(z_current, nadir):
             raise NautilusException("Cannot take more steps back, current iteration point is the nadir point.")
         # if dm wants to provide new preference info
         if not response["use_previous_preference"]:
-            validate_preferences(n_objectives, response)
+            validate_n2_preferences(n_objectives, response)
     if "n_iterations" in response:  # both for providing initial and new numbers of iterations.
         validate_n_iterations(response["n_iterations"])
 
 
-def validate_preferences(n_objectives: int, response: Dict) -> None:
+def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
     """
-    Validate decision maker's preferences.
+    Validate decision maker's preferences in NAUTILUS 2.
 
     Args:
         n_objectives (int): Number of objectives in problem.
@@ -72,33 +72,77 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
 
     if "preference_method" not in response:
         raise NautilusException("'preference_method entry missing")
+
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if response["preference_method"] not in [1, 2]:
-        raise NautilusException("please specify either preference method 1 (rank) or 2 (percentages).")
+
+    if response["preference_method"] not in [1, 2, 3]:
+        raise NautilusException("Please specify either preference method 1 (direct components)"
+                                ", 2 (improvement ratios), or 3 (pairs and improvement ratios).")
+
     if "preference_info" not in response:
         raise NautilusException("'preference_info entry missing")
-    if response["preference_method"] == 1:  # ranks
+
+    if response["preference_method"] in [1, 2]:
+        if any(response["preference_info"] <= 0):
+            msg = "All 'preference_info' items must be greater than zero. Check the items {}".format(
+                response["preference_info"])
+            raise NautilusException(msg)
         if len(response["preference_info"]) < n_objectives:
-            msg = "Number of ranks ({}) do not match the number of objectives '({})." \
+            msg = "Number of items in 'preference_info' ({}) do not match the number of objectives ({})." \
                 .format(len(response["preference_info"]), n_objectives)
             raise NautilusException(msg)
-        elif not (1 <= max(response["preference_info"]) <= n_objectives):
-            msg = "The minimum index of importance must be greater or equal "
-            "to 1 and the maximum index of improtance must be less "
-            "than or equal to the number of objectives in the "
-            "problem, which is {}. Check the indices {}" \
-                .format(n_objectives, response["preference_info"])
+
+    if response["preference_method"] == 2:  # improvement ratios
+        if not any(response["preference_info"] == 1):
+            msg = "At least one of the improvement ratios '({})' must be 1; specify the other functions' improvement " \
+                  "ratios in relation to this 1.".format(response["preference_info"])
             raise NautilusException(msg)
-    elif response["preference_method"] == 2:  # percentages
-        if len(response["preference_info"]) < n_objectives:
-            msg = "Number of given percentages ({}) do not match the number of objectives '({})." \
-                .format(len(response["preference_info"]), n_objectives)
+
+    if response["preference_method"] == 3:  # objective pairs and improvement ratios
+
+        # for checking that all objectives are included
+        obj_mask = [False] * n_objectives
+
+        if len(response["preference_info"]) != (n_objectives - 1):
+            msg = "Number of improvement ratios must be number of objectives - 1 ({}). The provided number was {}. " \
+                  "Please specify the objective " \
+                  "function pairs and corresponding improvement ratios again.".format(n_objectives - 1,
+                                                                                      len(response["preference_info"]))
             raise NautilusException(msg)
-        elif np.sum(response["preference_info"]) != 100:
-            msg = (
-                "The sum of the percentages must be 100. Current sum" " is {}."
-            ).format(np.sum(response["preference_info"]))
+
+        for elem in response["preference_info"]:
+
+            for obj in elem[0]:
+                if not isinstance(obj, int) or int(obj) <= 0:
+                    msg = "All objective function indeces must be a positive integer number. Given indeces ratios: {}.". \
+                        format([elem[0] for elem in response["preference_info"]])
+                    raise NautilusException(msg)
+
+                # if index matches any of the problem's indeces
+                match = [(i + 1) == obj for i in range(n_objectives)]
+
+                if not any(match):
+                    msg = "Range of objective function indeces '{}' must match the problem's number of objectives '{}'." \
+                        .format([elem[[0][0]] for elem in response["preference_info"]], n_objectives)
+                    raise NautilusException(msg)
+
+                # objective is included in pairs
+                obj_mask[obj - 1] = True
+
+            if not isinstance(elem[1], int) and not isinstance(elem[1], float):
+                msg = "All improvement ratios must be a integer of float number. Given improvement ratios: {}.". \
+                    format([elem[1] for elem in response["preference_info"]])
+                raise NautilusException(msg)
+
+            if float(elem[1]) <= 0:
+                msg = "All improvement ratios must a positive number greater than zero. Given improvement ratios: {}.". \
+                    format([elem[1] for elem in response["preference_info"]])
+                raise NautilusException(msg)
+
+        if not all(obj_mask):
+            msg = "Pairs for improvement ratios must include all objective functions. Given pairs: '{}'." \
+                .format([elem[0] for elem in response["preference_info"]])
             raise NautilusException(msg)
 
 
@@ -110,7 +154,7 @@ def validate_n_iterations(n_it: int) -> None:
         n_it (int): Number of iterations.
 
     Raises:
-        NautilusException: If number of iterations given is not an positive integer greater than zero.
+        NautilusException: If number of iterations given is not a positive integer greater than zero.
 
     """
 
@@ -151,11 +195,13 @@ class NautilusInitialRequest(BaseRequest):
         msg = (
             "Please specify the number of iterations as 'n_iterations' to be carried out.\n"
             "Please specify as 'preference_method' whether to \n"
-            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-            "values."
-            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
-            "each objective as 'preference_info'."
+            "1. Give directly components for direction of improvement.\n"
+            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio"
+            " as 1 and specify other objectives' improvement ratios in relatation to that."
+            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this "
+            "pair. For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
+            "Depending on your selection on 'preference_method', please specify either the direct components, "
+            "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
         )
         content = {
             "message": msg,
@@ -236,11 +282,14 @@ class NautilusRequest(BaseRequest):
             "'use_previous_preference'. Otherwise state 'False' as 'use_previous_preference' \n"
             "In case you chose to not to use preference information from previous iteration, \n"
             "Please specify as 'preference_method' whether to \n"
-            "1. Rank the objectives in increasing order according to the importance of improving their value.\n"
-            "2. Specify percentages reflecting how much would you like to improve each of the current objective "
-            "values."
-            "Depending on your selection on 'preference_method', please specify either the ranks or percentages for "
-            "each objective as 'preference_info'."
+            "1. Give directly components for direction of improvement.\n"
+            "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as "
+            "1, and specify other objectives' improvement ratios in relatation to that."
+            "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this "
+            "pair. For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
+            "Depending on your selection on 'preference_method', please specify either the direct components, "
+            "improvement ratios or objective pairs and values of T for each objective as 'preference_info'."
+
         )
         content = {
             "message": msg,
@@ -282,59 +331,55 @@ class NautilusStopRequest(BaseRequest):
         """
 
         msg = "Final solution found."
-        content = {"message": msg, "solution": x_h, "objective vector": f_h}
+        content = {"message": msg, "solution": x_h, "objective_vector": f_h}
 
         super().__init__("print", "no_interaction", content=content)
 
 
-class Nautilus(InteractiveMethod):
+class NautilusV2(InteractiveMethod):
     """
-    Implements the basic NAUTILUS method as presented in |Miettinen_2010|.
+    Implements the NAUTILUS 2 method as presented in |Miettinen_2015|.
 
-    In NAUTILUS, starting from the nadir point,
+    Similarly to NAUTILUS, starting from the nadir point,
     a solution is obtained at each iteration which dominates the previous one.
-    Although only the last solution will be Pareto optimal, the decision maker never looses sight of the
+    Although only the last solution will be Pareto optimal, the Decision Maker (DM) never looses sight of the
     Pareto optimal set, and the search is oriented so that (s)he progressively focusses on the preferred part of
     the Pareto optimal set. Each new solution is obtained by minimizing an achievement scalarizing function including
     preferences about desired improvements in objective function values.
 
-    The decision maker has **two possibilities** to provide her/his preferences:
+    NAUTILUS 2 introduces a new preference handling technique which is easily understandable for the DM and allows
+    the DM to conveniently control the solution process. Preferences are given as direction of improvement for
+    objectives. In NAUTILUS 2, the DM has **three ways** to do this:
 
-    1. The decision maker can **rank** the objectives according to the **relative** importance of improving each current
-    objective value.
+    1. The DM sets the direction of improvement directly.
 
-    Note:
-        This ranking is not a global preference ranking of the objectives, but represents the local importance of
-        improving each of the current objective values **at that moment**.
+    2. The DM defines the **improvement ratio** between two different objectives fi and fj.
+       For example, if the DM wishes that the improvement of fi by one unit should be accompanied with the improvement
+       of fj by θij units. Here, the DM selects an objective fi (i=1,…,k) and for each of the other objectives fj
+       sets the value θij. Then, the direction of improvement is defined by
 
-    2. The decision maker can specify **percentages** reflecting how (s)he would like to improve the current objective
-    values, by answering to the following question:
+            ``δi=1 and δj=θij, j≠i.``
 
-    *"Assuming you have one hundred points available, how would you distribute
-    them among the current objective values so that the more points you allocate, the more improvement on the
-    corresponding current objective value is desired?"*
+    3. As a generalization of the approach 2, the DM sets values of improvement ratios freely for some **selected
+       pairs** of objective functions.
 
-    After each iteration round, the decision maker specifies whether (s)he wishes to continue with the previous
-    preference information, or define a new one.
+    As with NAUTILUS, after each iteration round, the decision maker specifies whether (s)he wishes to continue with the
+    previous preference information, or define a new one.
 
-    In addition to this, the decision maker can influence the solution finding process by taking a **step back** to
-    previous iteration point. This enables the decision maker to provide new preferences and change the direction of
+    In addition to this, the decision maker can influence the solution finding process by taking a **step back** to the
+    previous iteration point. This enables the decision maker to provide new preferences and change the direction of the
     solution seeking process. Furthermore, the decision maker can also take a **half-step** in case (s)he feels that a
-    full step limits the reachable area of Pareto optimal set too much.
+    full step limits the reachable area of the Pareto optimal set too much.
 
-    NAUTILUS is specially suitable for avoiding  undesired anchoring effects, for example in negotiation support
-    problems, or just as a means of finding an initial Pareto optimal solution for any interactive procedure.
 
     Args:
         problem (MOProblem): Problem to be solved.
-        ideal (np.ndarray): The ideal objective vector of the problem.
-        nadir (np.ndarray): The nadir objective vector of the problem. This may also be the "worst" objective vector
-                            provided by the Decision maker if the approximation of Nadir vector is not applicable or if
-                            the Decision maker wishes to provide even worse objective vector than what the
-                            approximated Nadir vector is.
-        epsilon (float): A small number used in calculating the utopian point.
-        objective_names (Optional[List[str]], optional): Names of the objectives. List must match the number of columns
-                                                         in ideal.
+        starting_point (np.ndarray): Objective vector used as a starting point for method.
+        ideal (np.ndarray): The ideal objective vector of the problem being represented by the Pareto front.
+        nadir (np.ndarray): The nadir objective vector of the problem being represented by the Pareto front.
+        epsilon (float): A small number used in calculating the utopian point. By default 1e-6.
+        objective_names (Optional[List[str]], optional): Names of the objectives. The length of the list must match the
+                                                         number of columns in ideal.
         minimize (Optional[List[int]], optional): Multipliers for each objective. '-1' indicates maximization
                                                   and '1' minimization. Defaults to all objective values being
                                                   minimized.
@@ -346,6 +391,7 @@ class Nautilus(InteractiveMethod):
     def __init__(
             self,
             problem: MOProblem,
+            starting_point: np.ndarray,
             ideal: np.ndarray,
             nadir: np.ndarray,
             epsilon: float = 1e-6,
@@ -356,10 +402,16 @@ class Nautilus(InteractiveMethod):
         if not ideal.shape == nadir.shape:
             raise NautilusException("The dimensions of the ideal and nadir point do not match.")
 
+        if not ideal.shape == starting_point.shape:
+            raise NautilusException("The dimension of the ideal and starting point do not match.")
+
+        if all(np.less(nadir, starting_point)):
+            raise NautilusException("Starting point cannot be worse than nadir point.")
+
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise NautilusException(
-                    "The supplied objective names must have a length equal to " "the numbr of objectives."
+                    "The supplied objective names must have a leangth equal to " "the numbr of objectives."
                 )
             self._objective_names = objective_names
         else:
@@ -383,9 +435,10 @@ class Nautilus(InteractiveMethod):
         self._epsilon = epsilon
         self._ideal = ideal
         self._nadir = nadir
+        self._starting_point = starting_point
 
         # calculate utopian vector
-        self._utopian = [ideal_i - self._epsilon for ideal_i in self._ideal]
+        self._utopian = np.array([ideal_i - self._epsilon for ideal_i in self._ideal])
 
         # bounds of the reachable region
         self._lower_bounds: List[np.ndarray] = []
@@ -487,13 +540,14 @@ class Nautilus(InteractiveMethod):
         self._upper_bounds = [None] * (self._n_iterations + 2)
 
         # set initial iteration point
-        self._zs[self._step_number - 1] = self._nadir
+        self._zs[self._step_number - 1] = self._starting_point
 
         # set preference information
         self._preference_method: int = request.response["preference_method"]
         self._preference_info: np.ndarray = request.response["preference_info"]
-        self._preferential_factors = self.calculate_preferential_factors(self._preference_method, self._preference_info,
-                                                                         self._nadir, self._utopian)
+        self._preferential_factors = self.calculate_preferential_factors(len(self._objective_names),
+                                                                     self._preference_method,
+                                                                     self._preference_info)
 
         # set reference point, initial values for decision variables, lower and upper bounds for objective functions
         self._q = self._zs[self._step_number - 1]
@@ -524,7 +578,7 @@ class Nautilus(InteractiveMethod):
 
         # calculate distance from current iteration point to Pareto optimal set
         self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                              self._nadir,
+                                                              self._starting_point,
                                                               self._fs[self._step_number])
 
         # return the information from iteration round to be shown to the DM.
@@ -535,7 +589,7 @@ class Nautilus(InteractiveMethod):
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
         """
-        Handle Decision maker's requests after the first iteration round, so called **intermediate requests.**
+        Handle Decision maker's requests after the first iteration round, so-called **intermediate requests.**
 
         Args:
             request (NautilusRequest): Intermediate request including Decision maker's response.
@@ -588,9 +642,9 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
-                                                                                 self._preference_info,
-                                                                                 self._nadir, self._utopian)
+                self._preferential_factors = self.calculate_preferential_factors(len(self._objective_names),
+                                                                             self._preference_method,
+                                                                             self._preference_info)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
@@ -620,7 +674,7 @@ class Nautilus(InteractiveMethod):
 
             # calculate distance from current iteration point to Pareto optimal set
             self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                                  self._nadir,
+                                                                  self._starting_point,
                                                                   self._fs[self._step_number])
 
             # return the information from iteration round to be shown to the DM.
@@ -649,7 +703,7 @@ class Nautilus(InteractiveMethod):
 
                 # calculate distance from current iteration point to Pareto optimal set
                 self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                                      self._nadir,
+                                                                      self._starting_point,
                                                                       self._fs[self._step_number])
 
                 # return the information from iteration round to be shown to the DM.
@@ -664,9 +718,9 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
-                                                                                 self._preference_info,
-                                                                                 self._nadir, self._utopian)
+                self._preferential_factors = self.calculate_preferential_factors(len(self._objective_names),
+                                                                             self._preference_method,
+                                                                             self._preference_info)
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
@@ -694,7 +748,7 @@ class Nautilus(InteractiveMethod):
 
                 # calculate distance from current iteration point to Pareto optimal set
                 self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                                      self._nadir,
+                                                                      self._starting_point,
                                                                       self._fs[self._step_number])
 
                 # return the information from iteration round to be shown to the DM.
@@ -703,59 +757,109 @@ class Nautilus(InteractiveMethod):
                     self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
                 )
 
-    def calculate_preferential_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
-                                       utopian: np.ndarray) -> np.ndarray:
+    def calculate_preferential_factors(self, n_objectives: int, pref_method: int, pref_info: np.ndarray) -> np.ndarray:
         """
-        Calculate preferential factors based on the Decision maker's preference information. These preferential
-        factors are used as weights for objectives when solving an Achievement scalarizing function. The Decision maker
-        (DM) has **two possibilities** to provide her/his preferences:
-
-        1. The DM can rank the objectives according to the **relative** importance of improving each current objective
-        value.
-
-        Note:
-            This ranking is not a global preference ranking of the objectives, but represents the local importance of
-            improving each of the current objective values **at that moment**.
-
-        2. The DM can specify percentages reflecting how (s)he would like to improve the current objective values,
-        by answering to the following question:
-
-        *"Assuming you have one hundred points available, how would you distribute
-        them among the current objective values so that the more points you allocate, the more improvement on the
-        corresponding current objective value is desired?"*
+        Calculate preferential factors based on decision maker's preference information.
 
         Args:
-            pref_method (int): Preference information method (either ranks (1) or percentages (2)).
+            n_objectives (int): Number of objectives in problem.
+            pref_method (int): Preference information method, either: Direction of improvement (1), improvement ratios
+                               between a selected objective and rest of the objectives (2), or improvement ratios freely
+                               for some selected pairs of objectives (3).
             pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
-                                    function.
-            nadir (np.ndarray): Nadir vector.
-            utopian (np.ndarray): Utopian vector.
+                                    function. **See the examples below**.
 
         Returns:
-            np.ndarray: Weights assigned to each of the objective functions in achievement scalarizing function.
+            np.ndarray: Direction of improvement. Used as weights assigned to each of the objective functions in the
+            achievement scalarizing function.
 
         Examples:
-            >>> pref_method = 1  # ranks
-            >>> pref_info = np.array([2, 2, 1, 1])  # first and second objective are the most important to improve
-            >>> nadir = np.array([-4.75, -2.87, -0.32, 9.71])
-            >>> utopian = np.array([-6.34, -3.44, -7.5, 0.])
-            >>> calculate_preferential_factors(pref_method, pref_info, nadir, utopian)
-            array([0.31446541, 0.87719298, 0.13927577, 0.10298661])
+            >>> n_objectives = 4
+            >>> pref_method = 1  # deltas directly
+            >>> pref_info = np.array([1, 2, 1, 2]),  # second and fourth objective are the most important to improve
+            >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
+            np.array([1, 2, 1, 2])
 
-            >>> pref_method = 2  # percentages
-            >>> pref_info = np.array([10, 30, 40, 20])  # DM wishes to improve most the value of objective 3, then 2,4,1
-            >>> nadir = np.array([-4.75, -2.87, -0.32, 9.71])
-            >>> utopian = np.array([-6.34, -3.44, -7.5, 0.])
-            >>> calculate_preferential_factors(pref_method, pref_info, nadir, utopian)
-            array([6.28930818, 5.84795322, 0.34818942, 0.51493306])
+            >>> n_objectives = 4
+            >>> pref_method = 2  # improvement ratios between one selected objective and each other objective
+            >>> pref_info = np.array([1, 1.5, (7/3), 0.5])  # first objective's ratio is set to one
+            >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
+            np.array([1, 1.5, (7/3), 0.5])
+
+            >>> n_objectives = 4
+            >>> pref_method = 3  # improvement ratios between freely selected pairs of objectives
+            # format the tuples like this: (('index of objective', 'index of objective'), 'improvement ratio between the objectives')
+            >>> pref_info = np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
+            >>> calculate_preferential_factors(n_objectives, pref_method, pref_info)
+            np.array([1., 0.5, 0.75, 0.75])
+
+        Note:
+            Remember to specify "dtype=object" in **pref_info** array when using preference
+            method 3.
 
         """
 
-        if pref_method == 1:  # ranks
-            return np.array([1 / (r_i * (n_i - u_i)) for r_i, n_i, u_i in zip(pref_info, nadir, utopian)])
-        elif pref_method == 2:  # percentages
-            delta_q = pref_info / 100
-            return np.array([1 / (d_i * (n_i - u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)])
+        if pref_method in [1, 2]:  # deltas directly or improvement ratios
+            return pref_info
+
+        elif pref_method == 3:
+            return self.calculate_doi(n_objectives, pref_info)
+
+    def calculate_doi(self, n_objectives: int, pref_info: np.ndarray) -> np.ndarray:
+        """
+        Calculate direction of improvement based on improvement ratios between pairs of objective functions.
+
+        Args:
+            n_objectives (int): Number of objectives.
+            pref_info (np.ndarray): Preference information on how the DM wishes to improve the values of each objective
+                                    function.
+
+        Returns:
+            np.ndarray: Direction of improvement.
+
+        """
+
+        # initialize
+        deltas = np.zeros(n_objectives)
+
+        # direction of improvement for objective 1 is set to 1.
+        deltas[0] = 1
+
+        # 1. starting search from pairs containing objective 1
+        for ind, elem in enumerate(pref_info):
+
+            if elem[0][0] == 1:
+                # delta for objective i
+                delta_i = elem[1]
+
+                # set delta for objective i, minus 1 because objective indeces start at 1, but deltas are stored
+                # starting from index 0.
+                deltas[elem[0][1] - 1] = delta_i
+
+            elif elem[0][1] == 1:
+                delta_i = 1 / elem[1]
+                deltas[elem[0][0] - 1] = delta_i
+
+        # 2. if all deltas not set
+        # indeces of objectives for which deltas are still missing
+        missing = [ind + 1 for ind, elem in enumerate(deltas) if elem == 0]
+
+        while (0 in deltas):
+
+            # go through the missing objectives
+            for m in missing:
+                for ind, elem in enumerate(pref_info):
+
+                    # if objective is included in the pair
+                    if elem[0][0] == m:
+                        if deltas[elem[0][1] - 1] != 0:
+                            deltas[elem[0][0] - 1] = deltas[elem[0][1] - 1] * (1 / elem[1])
+
+                    elif elem[0][1] == m:
+                        if deltas[elem[0][0] - 1] != 0:
+                            deltas[elem[0][1] - 1] = deltas[elem[0][0] - 1] * elem[1]
+
+        return deltas
 
     def solve_asf(self,
                   ref_point: np.ndarray,
@@ -764,23 +868,23 @@ class Nautilus(InteractiveMethod):
                   nadir: np.ndarray,
                   utopian: np.ndarray,
                   objectives: Callable,
-                  variable_bounds: Optional[np.ndarray],
-                  method: Union[ScalarMethod, str, None]
+                  variable_bounds: Optional[np.ndarray] = None,
+                  method: Union[ScalarMethod, str, None] = None
                   ) -> dict:
         """
-        Solve Achievement scalarizing function.
+        Solve achievement scalarizing function.
 
         Args:
             ref_point (np.ndarray): Reference point.
             x0 (np.ndarray): Initial values for decision variables.
-            preferential_factors (np.ndarray): preferential factors on how much would the decision maker wish to improve
-                                             the values of each objective function.
+            preferential_factors (np.ndarray): Preferential factors indicating how much would the decision maker wish to
+                                               improve the values of each objective function.
             nadir (np.ndarray): Nadir vector.
             utopian (np.ndarray): Utopian vector.
             objectives (np.ndarray): The objective function values for each input vector.
-            variable_bounds (Optional[np.ndarray): Lower and upper bounds of each variable
+            variable_bounds (Optional[np.ndarray]): Lower and upper bounds of each variable
                                                    as a 2D numpy array. If undefined variables, None instead.
-            method (Union[ScalarMethod, str, None): The optimization method the scalarizer should be minimized with
+            method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
             Dict: A dictionary with at least the following entries: 'x' indicating the optimal variables found,
@@ -789,8 +893,12 @@ class Nautilus(InteractiveMethod):
 
         """
 
+        if variable_bounds is None:
+            # set all bounds as [-inf, inf]
+            variable_bounds = np.array([[-np.inf, np.inf]] * x0.shape[0])
+
         # scalarize problem using reference point
-        asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-6)
+        asf = ReferencePointASF([1 / preferential_factors], nadir, utopian, rho=1e-5)
         asf_scalarizer = Scalarizer(
             evaluator=objectives,
             scalarizer=asf,
@@ -827,12 +935,12 @@ class Nautilus(InteractiveMethod):
             n_objectives (int): Total number of objectives.
             x0 (np.ndarray): Initial values for decision variables.
             epsilons (np.ndarray): Previous iteration point.
-            bounds (Union[np.ndarray, None): Bounds for decision variables.
+            bounds (Union[np.ndarray, None]): Bounds for decision variables.
             constraints (Callable): Constraints of the problem.
             method (Union[ScalarMethod, str, None]): The optimization method the scalarizer should be minimized with.
 
         Returns:
-            new_lower_bounds (np.ndarray): New lower bounds for objective functions.
+            np.ndarray: New lower bounds for objective functions.
         """
 
         new_lower_bounds: np.ndarray = [None] * n_objectives
@@ -848,9 +956,9 @@ class Nautilus(InteractiveMethod):
         for i in range(n_objectives):
             eps = ECM.EpsilonConstraintMethod(objectives,
                                               i,
+                                              # take out the objective to be minimized
                                               np.array([val for ind, val in enumerate(epsilons) if ind != i]),
-                                              constraints=constraints
-                                              )
+                                              constraints=constraints)
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
 
@@ -863,13 +971,14 @@ class Nautilus(InteractiveMethod):
 
         return new_lower_bounds
 
-    def calculate_distance(self, z_current: np.ndarray, nadir: np.ndarray, f_current: np.ndarray) -> np.ndarray:
+    def calculate_distance(self, z_current: np.ndarray, starting_point: np.ndarray,
+                           f_current: np.ndarray) -> np.ndarray:
         """
         Calculates the distance from current iteration point to the Pareto optimal set.
 
         Args:
             z_current (np.ndarray): Current iteration point.
-            nadir (np.ndarray): Nadir vector.
+            starting_point (np.ndarray): Starting iteration point.
             f_current (np.ndarray): Current optimal objective vector.
 
         Returns:
@@ -877,15 +986,17 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        dist = (np.linalg.norm(np.atleast_2d(z_current) - nadir, ord=2, axis=1)) \
-               / (np.linalg.norm(np.atleast_2d(f_current) - nadir, ord=2, axis=1))
+        dist = (np.linalg.norm(np.atleast_2d(z_current) - starting_point, ord=2, axis=1)) \
+               / (np.linalg.norm(np.atleast_2d(f_current) - starting_point, ord=2, axis=1))
         return dist * 100
 
 
 # testing the method
 if __name__ == "__main__":
-    # example problem from article
+    print("Nautilus 2")
 
+
+    # Objectives
     def f1(xs):
         xs = np.atleast_2d(xs)
         return -4.07 - 2.27 * xs[:, 0]
@@ -894,7 +1005,7 @@ if __name__ == "__main__":
     def f2(xs):
         xs = np.atleast_2d(xs)
         return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (
-                0.30 / (1.39 - xs[:, 1] ** 2))
+                    0.30 / (1.39 - xs[:, 1] ** 2))
 
 
     def f3(xs):
@@ -923,20 +1034,22 @@ if __name__ == "__main__":
 
     initial_values = np.array([0.5, 0.5])
     lower_bounds = [0.3, 0.3]
-    upper_bounds = [1.0, 1.0]
+    upper_bounds = [1, 1]
     bounds = np.stack((lower_bounds, upper_bounds))
-    variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
+    variables = variable_builder(var_names, initial_values, upper_bounds=upper_bounds, lower_bounds=lower_bounds)
 
     # problem
     prob = MOProblem(objectives=[obj1, obj2, obj3, obj4], variables=variables)  # objectives "seperately"
 
-    ideal = np.array([-6.34, -3.44487179, -7.5, 0.])
+    # solved in Nautilus.py
+    ideal = np.array([-6.34, -3.44487179, -7.5, 0])
     nadir = np.array([-4.751, -2.86054116, -0.32111111, 9.70666666])
-    print("Ideal: ", ideal)
-    print("Nadir: ", nadir)
+
+    # starting point
+    z0 = np.array(([-4.07, -2.82, -3, 4]))
 
     # start solving
-    method = Nautilus(problem=prob, ideal=ideal, nadir=nadir)
+    method = NautilusV2(problem=prob, starting_point=z0, ideal=ideal, nadir=nadir)
 
     print("Let's start solving\n")
     req = method.start()
@@ -945,8 +1058,9 @@ if __name__ == "__main__":
     n_iterations = 3
     req.response = {
         "n_iterations": n_iterations,
-        "preference_method": 1,
-        "preference_info": np.array([2, 2, 1, 1]),
+        "preference_method": 3,  # pairs
+        # remember to specify "dtype=object" when using preference method 3.
+        "preference_info": np.array([((1, 2), 0.5), ((3, 4), 1), ((2, 3), 1.5)], dtype=object)
     }
     print("Step number: 0")
     print("Iteration point: ", nadir)
@@ -964,7 +1078,10 @@ if __name__ == "__main__":
     req.response = {
         "step_back": False,
         "short_step": False,
-        "use_previous_preference": True,
+        "use_previous_preference": False,
+        "preference_method": 3,  # pairs
+        "preference_info": np.array([((1, 3), 0.5), ((2, 4), 1), ((2, 3), (2 / 3))], dtype=object),
+
     }
 
     # 2 - take a step back and give new preferences
@@ -976,11 +1093,11 @@ if __name__ == "__main__":
     print("Closeness to Pareto optimal front", req.content["distance"])
 
     req.response = {
-        "step_back": True,
+        "step_back": False,
         "short_step": False,
         "use_previous_preference": False,
-        "preference_method": 1,
-        "preference_info": np.array([2, 3, 1, 4]),
+        "preference_method": 1,  # deltas directly
+        "preference_info": np.array([2, 1, 5, 10]),
     }
 
     # 3 - give new preferences
@@ -991,44 +1108,16 @@ if __name__ == "__main__":
     print("Lower bounds of objectives: ", req.content["lower_bounds"])
     print("Closeness to Pareto optimal front", req.content["distance"])
 
+    # give last iteration preferences
     req.response = {
         "step_back": False,
         "use_previous_preference": False,
-        "preference_method": 1,
+        "preference_method": 1,  # deltas directly
         "preference_info": np.array([1, 2, 1, 2]),
     }
 
-    # 4 - take a step back and provide new preferences
     req = method.iterate(req)
     print("\nStep number: ", method._step_number)
-    print("Iteration point: ", req.content["current_iteration_point"])
-    print("Pareto optimal vector: ", method._fs[method._step_number])
-    print("Lower bounds of objectives: ", req.content["lower_bounds"])
-    print("Closeness to Pareto optimal front", req.content["distance"])
-    """
-
-
-    req.response = {
-        "step_back": True,
-        "short_step": False,
-        "use_previous_preference": False,
-        "preference_method": 2,
-        "preference_info": np.array([30, 70]),
-    }
-
-    # 5. continue with the same preferences
-    while method._n_iterations_left > 1:
-        req = method.iterate(req)
-        print("\nStep number: ", method._step_number)
-        print("Iteration point: ", req.content["current_iteration_point"])
-        print("Pareto optimal vector: ", method._fs[method._step_number])
-        print("Lower bounds of objectives: ", req.content["lower_bounds"])
-        print("Closeness to Pareto optimal front", req.content["distance"])
-        req.response = {"step_back": False,
-                        "use_previous_preference": True
-                        }
-
-    print("\nEnd of solution process")
-    req = method.iterate(req)
-    print(req.content)
-    """
+    print(req.content["message"])
+    print("Solution: ", req.content["solution"])
+    print("Objective function values: ", req.content["objective_vector"])
