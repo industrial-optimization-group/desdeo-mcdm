@@ -1,17 +1,14 @@
-from typing import Dict, List, Optional, Union, Callable
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
-from desdeo_problem.Objective import _ScalarObjective, VectorObjective
+from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
+from desdeo_problem.Objective import VectorObjective, _ScalarObjective
 from desdeo_problem.Problem import MOProblem
 from desdeo_problem.Variable import variable_builder
-
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
-
-from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-
+from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
 from scipy.optimize import differential_evolution
 
 """
@@ -68,9 +65,7 @@ class RPMInitialRequest(BaseRequest):
         self._ideal = ideal
         self._nadir = nadir
 
-        msg = (
-            "Please specify a reference point as 'reference_point'."
-        )
+        msg = "Please specify a reference point as 'reference_point'."
         content = {
             "message": msg,
             "ideal": ideal,
@@ -104,11 +99,11 @@ class RPMInitialRequest(BaseRequest):
             RPMException: In case reference point is missing.
         """
 
-        if 'reference_point' not in response:
+        if "reference_point" not in response:
             msg = "Reference point missing. Please specify a reference point as 'reference_point."
             raise RPMException(msg)
         else:
-            validate_reference_point(response['reference_point'], self._ideal, self._nadir)
+            validate_reference_point(response["reference_point"], self._ideal, self._nadir)
 
         self._response = response
 
@@ -118,13 +113,7 @@ class RPMRequest(BaseRequest):
     A request class to handle the Decision Maker's preferences after the first iteration round.
     """
 
-    def __init__(
-            self,
-            f_current: np.ndarray,
-            f_additionals: np.ndarray,
-            ideal: np.ndarray,
-            nadir: np.ndarray,
-    ) -> None:
+    def __init__(self, f_current: np.ndarray, f_additionals: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,) -> None:
         """
         Initialize request with current iterations's solution process information.
 
@@ -148,11 +137,7 @@ class RPMRequest(BaseRequest):
             "Otherwise, please state 'satisfied' as 'False and specify a new reference point as 'reference_point'."
         )
 
-        content = {
-            "message": msg,
-            "current_solution": f_current,
-            "additional_solutions": f_additionals
-        }
+        content = {"message": msg, "current_solution": f_current, "additional_solutions": f_additionals}
 
         super().__init__("reference_point_preference", "required", content=content)
 
@@ -168,19 +153,22 @@ class RPMRequest(BaseRequest):
             RPMException: In case response is invalid.
         """
 
-        if 'satisfied' in response and response['satisfied']:
-            if not response['solution_index']:
-                raise RPMException("If you are satisfied with one of the solutions, please specify the index of the "
-                                   "solution as 'solution_index'.")
-            if not (0 <= response['solution_index'] <= self._f_current.shape[0]):
-                msg = "Solution index must range from 0 to number of objectives - 1 '{}'. Given solution index: '{}." \
-                    .format(self._f_current.shape[0], response['solution_index'])
+        if "satisfied" in response and response["satisfied"]:
+            if not response["solution_index"] and not response["solution_index"] == 0:
+                raise RPMException(
+                    "If you are satisfied with one of the solutions, please specify the index of the "
+                    "solution as 'solution_index'."
+                )
+            if not (0 <= response["solution_index"] <= self._f_current.shape[0]):
+                msg = "Solution index must range from 0 to number of objectives - 1 '{}'. Given solution index: '{}.".format(
+                    self._f_current.shape[0], response["solution_index"]
+                )
                 raise RPMException(msg)
         else:
-            if 'reference_point' not in response:
+            if "reference_point" not in response:
                 raise RPMException("New reference point information missing. Please specify it as 'reference_point'.")
             else:
-                validate_reference_point(response['reference_point'], self._ideal, self._nadir)
+                validate_reference_point(response["reference_point"], self._ideal, self._nadir)
 
         self._response = response
 
@@ -254,13 +242,13 @@ class ReferencePointMethod(InteractiveMethod):
     """
 
     def __init__(
-            self,
-            problem: MOProblem,
-            ideal: np.ndarray,
-            nadir: np.ndarray,
-            epsilon: float = 1e-6,
-            objective_names: Optional[List[str]] = None,
-            minimize: Optional[List[int]] = None,
+        self,
+        problem: MOProblem,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
+        epsilon: float = 1e-6,
+        objective_names: Optional[List[str]] = None,
+        minimize: Optional[List[int]] = None,
     ):
 
         if not ideal.shape == nadir.shape:
@@ -320,7 +308,7 @@ class ReferencePointMethod(InteractiveMethod):
         self._method_de: ScalarMethod = ScalarMethod(
             lambda x, _, **y: differential_evolution(x, **y),
             method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-            use_scipy=True
+            use_scipy=True,
         )
 
     def start(self) -> RPMInitialRequest:
@@ -334,7 +322,7 @@ class ReferencePointMethod(InteractiveMethod):
         return RPMInitialRequest.init_with_method(self)
 
     def iterate(
-            self, request: Union[RPMInitialRequest, RPMRequest, RPMStopRequest]
+        self, request: Union[RPMInitialRequest, RPMRequest, RPMStopRequest]
     ) -> Union[RPMRequest, RPMStopRequest]:
         """
         Perform the next logical iteration step based on the given request type.
@@ -377,8 +365,16 @@ class ReferencePointMethod(InteractiveMethod):
         x0 = self._problem.get_variable_upper_bounds() / 2
 
         # solve the ASF-problem
-        result = self.solve_asf(self._q, x0, self._w, self._nadir, self._utopian, self._objectives,
-                                self._variable_bounds, method=self._method_de)
+        result = self.solve_asf(
+            self._q,
+            x0,
+            self._w,
+            self._nadir,
+            self._utopian,
+            self._objectives,
+            self._variable_bounds,
+            method=self._method_de,
+        )
 
         # update current solution and objective function values
         self._xs[self._h] = result["x"]
@@ -388,17 +384,19 @@ class ReferencePointMethod(InteractiveMethod):
         self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
 
         # calculate n other solutions with perturbed reference points
-        results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._utopian, self._objectives,
-                                             self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
+        results_additional = [
+            self.solve_asf(
+                pqi, x0, self._w, self._nadir, self._utopian, self._objectives, self._variable_bounds, self._method_de
+            )
+            for pqi in self._pqs[self._h]
+        ]
 
         # store results into arrays
         self._axs[self._h] = [result["x"] for result in results_additional]
         self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
 
         # return the information from iteration round to be shown to the DM.
-        return RPMRequest(
-            self._fs[self._h], self._afs[self._h], self._ideal, self._nadir
-        )
+        return RPMRequest(self._fs[self._h], self._afs[self._h], self._ideal, self._nadir)
 
     def handle_request(self, request: RPMRequest) -> Union[RPMRequest, RPMStopRequest]:
         """
@@ -415,12 +413,13 @@ class ReferencePointMethod(InteractiveMethod):
         resp: dict = request.response
 
         # end solution finding process
-        if 'satisfied' in resp and resp['satisfied']:
-            if resp['solution_index'] == 0:  # "original" solution
+        if "satisfied" in resp and resp["satisfied"]:
+            if resp["solution_index"] == 0:  # "original" solution
                 return RPMStopRequest(self._xs[self._h], self._fs[self._h])
             else:  # additional solution
-                return RPMStopRequest(self._axs[self._h][resp['solution_index'] - 1],
-                                      self._afs[self._h][resp['solution_index'] - 1])
+                return RPMStopRequest(
+                    self._axs[self._h][resp["solution_index"] - 1], self._afs[self._h][resp["solution_index"] - 1]
+                )
 
         # continue with new reference point given by the DM
         else:
@@ -437,7 +436,7 @@ class ReferencePointMethod(InteractiveMethod):
                 self._afs = np.array(np.concatenate((self._afs, extra_space), axis=None), dtype=object)
 
             # set new reference point
-            self._qs[self._h] = resp['reference_point']
+            self._qs[self._h] = resp["reference_point"]
             self._q = self._qs[self._h]
 
             # set weighting vector
@@ -447,8 +446,16 @@ class ReferencePointMethod(InteractiveMethod):
             x0 = self._problem.get_variable_upper_bounds() / 2
 
             # solve the ASF-problem
-            result = self.solve_asf(self._q, x0, self._w, self._nadir, self._utopian, self._objectives,
-                                    self._variable_bounds, method=self._method_de)
+            result = self.solve_asf(
+                self._q,
+                x0,
+                self._w,
+                self._nadir,
+                self._utopian,
+                self._objectives,
+                self._variable_bounds,
+                method=self._method_de,
+            )
 
             # update current solution and objective function values
             self._xs[self._h] = result["x"]
@@ -458,17 +465,26 @@ class ReferencePointMethod(InteractiveMethod):
             self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
 
             # calculate n other solutions with perturbed reference points
-            results_additional = [self.solve_asf(pqi, x0, self._w, self._nadir, self._utopian, self._objectives,
-                                                 self._variable_bounds, self._method_de) for pqi in self._pqs[self._h]]
+            results_additional = [
+                self.solve_asf(
+                    pqi,
+                    x0,
+                    self._w,
+                    self._nadir,
+                    self._utopian,
+                    self._objectives,
+                    self._variable_bounds,
+                    self._method_de,
+                )
+                for pqi in self._pqs[self._h]
+            ]
 
             # store results into arrays
             self._axs[self._h] = [result["x"] for result in results_additional]
             self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
 
             # return the information from iteration round to be shown to the DM.
-            return RPMRequest(
-                self._fs[self._h], self._afs[self._h], self._ideal, self._nadir
-            )
+            return RPMRequest(self._fs[self._h], self._afs[self._h], self._ideal, self._nadir)
 
     def calculate_prp(self, ref_point: np.ndarray, f_current: np.ndarray) -> np.ndarray:
         """
@@ -496,16 +512,17 @@ class ReferencePointMethod(InteractiveMethod):
 
         return ref_point + (d * es)
 
-    def solve_asf(self,
-                  ref_point: np.ndarray,
-                  x0: np.ndarray,
-                  preferential_factors: np.ndarray,
-                  nadir: np.ndarray,
-                  utopian: np.ndarray,
-                  objectives: Callable,
-                  variable_bounds: Optional[np.ndarray] = None,
-                  method: Union[ScalarMethod, str, None] = None
-                  ) -> dict:
+    def solve_asf(
+        self,
+        ref_point: np.ndarray,
+        x0: np.ndarray,
+        preferential_factors: np.ndarray,
+        nadir: np.ndarray,
+        utopian: np.ndarray,
+        objectives: Callable,
+        variable_bounds: Optional[np.ndarray] = None,
+        method: Union[ScalarMethod, str, None] = None,
+    ) -> dict:
         """
         Solve Achievement scalarizing function.
 
@@ -534,9 +551,8 @@ class ReferencePointMethod(InteractiveMethod):
         # scalarize problem using reference point
         asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-4)
         asf_scalarizer = Scalarizer(
-            evaluator=objectives,
-            scalarizer=asf,
-            scalarizer_args={"reference_point": ref_point})
+            evaluator=objectives, scalarizer=asf, scalarizer_args={"reference_point": ref_point}
+        )
 
         # minimize
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
@@ -552,26 +568,26 @@ if __name__ == "__main__":
         xs = np.atleast_2d(xs)
         return -4.07 - 2.27 * xs[:, 0]
 
-
     def f2(xs):
         xs = np.atleast_2d(xs)
-        return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (
-                0.30 / (1.39 - xs[:, 1] ** 2))
-
+        return (
+            -2.60
+            - 0.03 * xs[:, 0]
+            - 0.02 * xs[:, 1]
+            - (0.01 / (1.39 - xs[:, 0] ** 2))
+            - (0.30 / (1.39 - xs[:, 1] ** 2))
+        )
 
     def f3(xs):
         xs = np.atleast_2d(xs)
         return -8.21 + (0.71 / (1.09 - xs[:, 0] ** 2))
 
-
     def f4(xs):
         xs = np.atleast_2d(xs)
         return -0.96 + (0.96 / (1.09 - xs[:, 1] ** 2))
 
-
     def objectives(xs):
         return np.stack((f1(xs), f2(xs), f3(xs), f4(xs))).T
-
 
     obj1 = _ScalarObjective("obj1", f1)
     obj2 = _ScalarObjective("obj2", f2)
@@ -603,7 +619,7 @@ if __name__ == "__main__":
 
     print("Let's start solving\n")
     req = method.start()
-    rp = np.array([-5., -3., -3., 5.])
+    rp = np.array([-5.0, -3.0, -3.0, 5.0])
     req.response = {
         "reference_point": rp,
     }
@@ -618,18 +634,14 @@ if __name__ == "__main__":
     print("Pareto optimal solution: ", req.content["current_solution"])
     print("Additional solutions: ", req.content["additional_solutions"])
 
-    while step < 15:
-        step +=1
+    while step < 3:
+        step += 1
         rp = np.array([np.random.uniform(i, n) for i, n in zip(ideal, nadir)])
-        req.response = {
-            "reference_point": rp,
-        }
+        req.response = {"reference_point": rp, "satisfied": False}
         req = method.iterate(req)
         print("\nStep number: ", method._h)
         print("Reference point: ", rp)
         print("Pareto optimal solution: ", req.content["current_solution"])
         print("Additional solutions: ", req.content["additional_solutions"])
 
-
-
-
+    req.response = {"solution_index": 0, "satisfied": True}
