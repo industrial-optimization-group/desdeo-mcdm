@@ -160,9 +160,9 @@ class RPMRequest(BaseRequest):
                     "solution as 'solution_index'."
                 )
             if not (0 <= response["solution_index"] <= self._f_current.shape[0]):
-                msg = "Solution index must range from 0 to number of objectives - 1 '{}'. Given solution index: '{}.".format(
-                    self._f_current.shape[0], response["solution_index"]
-                )
+                msg = (
+                    "Solution index must range from 0 to number of objectives - 1 '{}'. " "Given solution index: '{}."
+                ).format(self._f_current.shape[0], response["solution_index"])
                 raise RPMException(msg)
         else:
             if "reference_point" not in response:
@@ -624,7 +624,7 @@ if __name__ == "__main__":
         "reference_point": rp,
     }
 
-    print("Step number: 0")
+    print(f"Step number: {method._h}")
 
     # 1 - continue with same preferences
     req = method.iterate(req)
@@ -634,7 +634,7 @@ if __name__ == "__main__":
     print("Pareto optimal solution: ", req.content["current_solution"])
     print("Additional solutions: ", req.content["additional_solutions"])
 
-    while step < 3:
+    while step < 4:
         step += 1
         rp = np.array([np.random.uniform(i, n) for i, n in zip(ideal, nadir)])
         req.response = {"reference_point": rp, "satisfied": False}
@@ -644,4 +644,7 @@ if __name__ == "__main__":
         print("Pareto optimal solution: ", req.content["current_solution"])
         print("Additional solutions: ", req.content["additional_solutions"])
 
-    req.response = {"solution_index": 0, "satisfied": True}
+    req.response = {"satisfied": True, "solution_index": 0}
+    req = method.iterate(req)
+
+    print(req.content)
