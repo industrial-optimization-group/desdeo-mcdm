@@ -514,7 +514,7 @@ class NIMBUS(InteractiveMethod):
             decision maker wishes to see intermediate points, the latter otherwise. Also a plot request is
             returned with the solutions available in it.
         """
-        if request.response["indices"]:
+        if len(request.response["indices"]) > 0:
             return self.compute_intermediate_solutions(
                 np.array(request.content["solutions"])[request.response["indices"]],
                 int(request.response["number_of_desired_solutions"]),
