@@ -169,7 +169,7 @@ class NimbusSaveRequest(BaseRequest):
         if "indices" not in response:
             raise NimbusException("'indices' entry missing")
 
-        if not response["indices"]:
+        if len(response["indices"]) == 0:
             # nothing to save, continue to next state
             return
 
