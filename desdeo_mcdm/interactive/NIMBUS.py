@@ -240,13 +240,13 @@ class NimbusIntermediateSolutionsRequest(BaseRequest):
         if response["number_of_desired_solutions"] < 0:
             raise NimbusException(f"Invalid number of desired solutions {response['number_of_desired_solutions']}.")
 
-        if not response["indices"] and response["number_of_desired_solutions"] > 0:
-            raise NimbusException("Indices supplied yet number of desired soutions is greater than zero.")
+        if len(response["indices"]) > 0 and response["number_of_desired_solutions"] == 0:
+            raise NimbusException("Indices supplied yet number of desired solutions is zero.")
 
-        if response["indices"] and response["number_of_desired_solutions"] == 0:
-            raise NimbusException("Indices not supplied yet number of desired soutions is zero.")
+        if len(response["indices"]) == 0 and response["number_of_desired_solutions"] > 0:
+            raise NimbusException("Indices not supplied yet number of desired solutions is greater than zero.")
 
-        if not response["indices"]:
+        if len(response["indices"]) == 0:
             return
 
         if np.max(response["indices"]) >= len(self.content["objectives"]) or np.min(response["indices"]) < 0:
