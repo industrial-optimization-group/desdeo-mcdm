@@ -7,13 +7,21 @@ from desdeo_problem.Problem import MOProblem
 from desdeo_problem.Variable import variable_builder
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
-from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
+from desdeo_tools.scalarization.Scalarizer import DiscreteScalarizer, Scalarizer
+from desdeo_tools.solver.ScalarSolver import DiscreteMinimizer, ScalarMethod, ScalarMinimizer
 from scipy.optimize import differential_evolution
 
 """
 Reference Point Method (RPM)
 """
+
+
+class DiscreteData:
+    def __init__(self, data, variable_names, objective_names, ideal, nadir):
+        self.decision_variables = data[variable_names].values
+        self.objectives = data[objective_names].values
+        self.ideal = ideal
+        self.nadir = nadir
 
 
 class RPMException(Exception):
@@ -243,7 +251,7 @@ class ReferencePointMethod(InteractiveMethod):
 
     def __init__(
         self,
-        problem: MOProblem,
+        problem: Union[MOProblem, DiscreteData],
         ideal: np.ndarray,
         nadir: np.ndarray,
         epsilon: float = 1e-6,
@@ -269,13 +277,6 @@ class ReferencePointMethod(InteractiveMethod):
             self._minimize = minimize
         else:
             self._minimize = [1 for _ in range(ideal.shape[0])]
-
-        # initialize method with problem
-        super().__init__(problem)
-        self._problem = problem
-        self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
-        self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
-        self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
 
         self._ideal = ideal
         self._nadir = nadir
@@ -304,12 +305,29 @@ class ReferencePointMethod(InteractiveMethod):
         # weighting vector for achievement function
         self._w: np.ndarray = []
 
-        # evolutionary method for minimizing
-        self._method_de: ScalarMethod = ScalarMethod(
-            lambda x, _, **y: differential_evolution(x, **y),
-            method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-            use_scipy=True,
-        )
+        self._problem = problem
+
+        if isinstance(problem, MOProblem):
+            # initialize method with MOProblem
+            self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
+            self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
+            self._variable_vectors = None
+            self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
+
+            # evolutionary method for minimizing
+            self._method_de: ScalarMethod = ScalarMethod(
+                lambda x, _, **y: differential_evolution(x, **y),
+                method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
+                use_scipy=True,
+            )
+        else:
+            # Initialize the method with DiscreteData
+            self._objectives = problem.objectives
+            self._variable_bounds = None  # TODO: check me
+            self._variable_vectors = problem.decision_variables
+            self._constraints = None  # TODO: check me
+
+            self._method_de = "discrete"
 
     def start(self) -> RPMInitialRequest:
         """
@@ -362,7 +380,11 @@ class ReferencePointMethod(InteractiveMethod):
         self._w = self._q / (self._utopian - self._nadir)
 
         # set initial values for decision variables
-        x0 = self._problem.get_variable_upper_bounds() / 2
+        if isinstance(self._problem, MOProblem):
+            x0 = self._problem.get_variable_upper_bounds() / 2
+        else:
+            # discrete case
+            x0 = self._variable_vectors[0]  # this is ignored in the discrete case
 
         # solve the ASF-problem
         result = self.solve_asf(
@@ -372,13 +394,19 @@ class ReferencePointMethod(InteractiveMethod):
             self._nadir,
             self._utopian,
             self._objectives,
+            self._variable_vectors,
             self._variable_bounds,
             method=self._method_de,
         )
 
         # update current solution and objective function values
-        self._xs[self._h] = result["x"]
-        self._fs[self._h] = self._objectives(self._xs[self._h])[0]
+        if isinstance(self._problem, MOProblem):
+            self._xs[self._h] = result["x"]
+            self._fs[self._h] = self._objectives(self._xs[self._h])[0]
+        else:
+            # discrete case
+            self._xs[self._h] = self._variable_vectors[result["x"]]
+            self._fs[self._h] = self._objectives[result["x"]]
 
         # calculate perturbed reference points
         self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
@@ -386,14 +414,26 @@ class ReferencePointMethod(InteractiveMethod):
         # calculate n other solutions with perturbed reference points
         results_additional = [
             self.solve_asf(
-                pqi, x0, self._w, self._nadir, self._utopian, self._objectives, self._variable_bounds, self._method_de
+                pqi,
+                x0,
+                self._w,
+                self._nadir,
+                self._utopian,
+                self._objectives,
+                self._variable_vectors,
+                self._variable_bounds,
+                self._method_de,
             )
             for pqi in self._pqs[self._h]
         ]
 
         # store results into arrays
-        self._axs[self._h] = [result["x"] for result in results_additional]
-        self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
+        if isinstance(self._problem, MOProblem):
+            self._axs[self._h] = [result["x"] for result in results_additional]
+            self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
+        else:
+            self._axs[self._h] = [self._variable_vectors[result["x"]] for result in results_additional]
+            self._afs[self._h] = [self._objectives[result["x"]] for result in results_additional]
 
         # return the information from iteration round to be shown to the DM.
         return RPMRequest(self._fs[self._h], self._afs[self._h], self._ideal, self._nadir)
@@ -443,7 +483,11 @@ class ReferencePointMethod(InteractiveMethod):
             self._w = self._q / (self._utopian - self._nadir)
 
             # set initial values for decision variables
-            x0 = self._problem.get_variable_upper_bounds() / 2
+            if isinstance(self._problem, MOProblem):
+                x0 = self._problem.get_variable_upper_bounds() / 2
+            else:
+                # discrete case
+                x0 = self._variable_vectors[0]  # this is ignored in the discrete case
 
             # solve the ASF-problem
             result = self.solve_asf(
@@ -453,13 +497,19 @@ class ReferencePointMethod(InteractiveMethod):
                 self._nadir,
                 self._utopian,
                 self._objectives,
+                self._variable_vectors,
                 self._variable_bounds,
                 method=self._method_de,
             )
 
             # update current solution and objective function values
-            self._xs[self._h] = result["x"]
-            self._fs[self._h] = self._objectives(self._xs[self._h])[0]
+            if isinstance(self._problem, MOProblem):
+                self._xs[self._h] = result["x"]
+                self._fs[self._h] = self._objectives(self._xs[self._h])[0]
+            else:
+                # discrete case
+                self._xs[self._h] = self._variable_vectors[result["x"]]
+                self._fs[self._h] = self._objectives[result["x"]]
 
             # calculate perturbed reference points
             self._pqs[self._h] = self.calculate_prp(self._q, self._fs[self._h])
@@ -473,6 +523,7 @@ class ReferencePointMethod(InteractiveMethod):
                     self._nadir,
                     self._utopian,
                     self._objectives,
+                    self._variable_vectors,
                     self._variable_bounds,
                     self._method_de,
                 )
@@ -480,8 +531,12 @@ class ReferencePointMethod(InteractiveMethod):
             ]
 
             # store results into arrays
-            self._axs[self._h] = [result["x"] for result in results_additional]
-            self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
+            if isinstance(self._problem, MOProblem):
+                self._axs[self._h] = [result["x"] for result in results_additional]
+                self._afs[self._h] = [self._objectives(xs_i)[0] for xs_i in self._axs[self._h]]
+            else:
+                self._axs[self._h] = [self._variable_vectors[result["x"]] for result in results_additional]
+                self._afs[self._h] = [self._objectives[result["x"]] for result in results_additional]
 
             # return the information from iteration round to be shown to the DM.
             return RPMRequest(self._fs[self._h], self._afs[self._h], self._ideal, self._nadir)
@@ -520,6 +575,7 @@ class ReferencePointMethod(InteractiveMethod):
         nadir: np.ndarray,
         utopian: np.ndarray,
         objectives: Callable,
+        variable_vectors: Optional[np.ndarray] = None,
         variable_bounds: Optional[np.ndarray] = None,
         method: Union[ScalarMethod, str, None] = None,
     ) -> dict:
@@ -544,19 +600,33 @@ class ReferencePointMethod(InteractiveMethod):
             the optimization was conducted successfully.
         """
 
-        if variable_bounds is None:
-            # set all bounds as [-inf, inf]
-            variable_bounds = np.array([[-np.inf, np.inf]] * x0.shape[0])
+        if method != "discrete":
+            # non discrete case
+            if variable_bounds is None:
+                # set all bounds as [-inf, inf]
+                variable_bounds = np.array([[-np.inf, np.inf]] * x0.shape[0])
 
-        # scalarize problem using reference point
-        asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-4)
-        asf_scalarizer = Scalarizer(
-            evaluator=objectives, scalarizer=asf, scalarizer_args={"reference_point": ref_point}
-        )
+            # scalarize problem using reference point
+            asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-4)
+            asf_scalarizer = Scalarizer(
+                evaluator=objectives, scalarizer=asf, scalarizer_args={"reference_point": ref_point}
+            )
 
-        # minimize
-        minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
-        return minimizer.minimize(x0)
+            # minimize
+            minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
+            return minimizer.minimize(x0)
+        else:
+            # discrete case
+            # scalarize problem using reference point
+            asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-4)
+            asf_scalarizer = DiscreteScalarizer(asf, scalarizer_args={"reference_point": ref_point})
+
+            # minimize the discrete problem
+            minimizer = DiscreteMinimizer(asf_scalarizer)
+
+            res = minimizer.minimize(objectives)
+
+            return res
 
 
 # testing the method

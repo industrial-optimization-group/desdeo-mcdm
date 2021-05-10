@@ -132,4 +132,4 @@ dmypy.json
 .vscode
 .idea
 
-sandbox.py
+sandbox*

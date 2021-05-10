@@ -7,7 +7,8 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.7.0,<3.10"
-desdeo-tools = "^1.4.1"
+TODO: uncomment me! desdeo-tools = "^1.4.1"
+# desdeo-tools = { path = "/home/kilo/workspace/desdeo-tools" }
 desdeo-problem = "^1.2.0"
 
 [tool.poetry.dev-dependencies]
