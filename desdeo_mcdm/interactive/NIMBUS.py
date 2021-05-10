@@ -4,14 +4,13 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from desdeo_problem.Problem import MOProblem
-from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
-from desdeo_tools.scalarization.ASF import AugmentedGuessASF, MaxOfTwoASF, PointMethodASF, SimpleASF, StomASF
-from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
-
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_mcdm.utilities.solvers import payoff_table_method
+from desdeo_problem.Problem import DiscreteDataProblem, MOProblem
+from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
+from desdeo_tools.scalarization.ASF import AugmentedGuessASF, MaxOfTwoASF, PointMethodASF, SimpleASF, StomASF
+from desdeo_tools.scalarization.Scalarizer import DiscreteScalarizer, Scalarizer
+from desdeo_tools.solver.ScalarSolver import DiscreteMinimizer, ScalarMethod, ScalarMinimizer
 
 
 class NimbusException(Exception):
@@ -361,7 +360,7 @@ class NIMBUS(InteractiveMethod):
             the various ASF minimization problems present in the method. Defaults to None.
     """
 
-    def __init__(self, problem: MOProblem, scalar_method: Optional[ScalarMethod] = None):
+    def __init__(self, problem: Union[MOProblem, DiscreteDataProblem], scalar_method: Optional[ScalarMethod] = None):
         # check if ideal and nadir are defined
         if problem.ideal is None or problem.nadir is None:
             # TODO: use same method as defined in scalar_method
@@ -375,29 +374,40 @@ class NIMBUS(InteractiveMethod):
         self._scalar_method = scalar_method
 
         # generate Pareto optimal starting point
-        asf = SimpleASF(np.ones(self._ideal.shape))
-        scalarizer = Scalarizer(
-            lambda x: problem.evaluate(x).objectives,
-            asf,
-            scalarizer_args={"reference_point": np.atleast_2d(self._ideal)},
-        )
+        if isinstance(problem, MOProblem):
+            asf = SimpleASF(np.ones(self._ideal.shape))
+            scalarizer = Scalarizer(
+                lambda x: problem.evaluate(x).objectives,
+                asf,
+                scalarizer_args={"reference_point": np.atleast_2d(self._ideal)},
+            )
 
-        if problem.n_of_constraints > 0:
-            _con_eval = lambda x: problem.evaluate(x).constraints.squeeze()
+            if problem.n_of_constraints > 0:
+                _con_eval = lambda x: problem.evaluate(x).constraints.squeeze()
+            else:
+                _con_eval = None
+
+            solver = ScalarMinimizer(
+                scalarizer, problem.get_variable_bounds(), constraint_evaluator=_con_eval, method=self._scalar_method,
+            )
+            # TODO: fix tools to check for scipy methods in general and delete me!
+            solver._use_scipy = True
+
+            res = solver.minimize(problem.get_variable_upper_bounds() / 2)
+
+            if res["success"]:
+                self._current_solution = res["x"]
+                self._current_objectives = problem.evaluate(self._current_solution).objectives.squeeze()
+
         else:
-            _con_eval = None
+            # discrete case
+            asf = SimpleASF(np.ones(self._ideal.shape))
+            scalarizer = DiscreteScalarizer(asf, scalarizer_args={"reference_point": self._ideal})
+            solver = DiscreteMinimizer(scalarizer)
 
-        solver = ScalarMinimizer(
-            scalarizer, problem.get_variable_bounds(), constraint_evaluator=_con_eval, method=self._scalar_method,
-        )
-        # TODO: fix tools to check for scipy methods in general and delete me!
-        solver._use_scipy = True
-
-        res = solver.minimize(problem.get_variable_upper_bounds() / 2)
-
-        if res["success"]:
-            self._current_solution = res["x"]
-            self._current_objectives = problem.evaluate(self._current_solution).objectives.squeeze()
+            res = solver.minimize(problem.objectives)
+            self._current_solution = problem.decision_variables[res["x"]]
+            self._current_objectives = problem.objectives[res["x"]]
 
         self._archive_solutions = []
         self._archive_objectives = []
@@ -430,14 +440,22 @@ class NIMBUS(InteractiveMethod):
         Returns:
             SimplePlotRequest: A plot request to create a visualization.
         """
-        dimensions_data = pd.DataFrame(
-            index=["minimize", "ideal", "nadir"], columns=self._problem.get_objective_names(),
-        )
-        dimensions_data.loc["minimize"] = self._problem._max_multiplier
-        dimensions_data.loc["ideal"] = self._ideal
-        dimensions_data.loc["nadir"] = self._nadir
+        if isinstance(self._problem, MOProblem):
+            dimensions_data = pd.DataFrame(
+                index=["minimize", "ideal", "nadir"], columns=self._problem.get_objective_names(),
+            )
+            dimensions_data.loc["minimize"] = self._problem._max_multiplier
+            dimensions_data.loc["ideal"] = self._ideal
+            dimensions_data.loc["nadir"] = self._nadir
 
-        data = pd.DataFrame(objectives, columns=self._problem.get_objective_names())
+            data = pd.DataFrame(objectives, columns=self._problem.get_objective_names())
+        else:
+            dimensions_data = pd.DataFrame(index=["minimize", "ideal", "nadir"], columns=self._problem.objective_names,)
+            dimensions_data.loc["minimize"] = [1 for _ in self._problem.objective_names]
+            dimensions_data.loc["ideal"] = self._ideal
+            dimensions_data.loc["nadir"] = self._nadir
+
+            data = pd.DataFrame(objectives, columns=self._problem.objective_names)
 
         plot_request = SimplePlotRequest(data=data, dimensions_data=dimensions_data, message=msg,)
 
@@ -624,22 +642,39 @@ class NIMBUS(InteractiveMethod):
         asf = PointMethodASF(self._nadir, self._ideal)
 
         for i in range(n_desired):
-            scalarizer = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives,
-                asf,
-                scalarizer_args={"reference_point": self._problem.evaluate(intermediate_points[i]).objectives},
-            )
+            if isinstance(self._problem, MOProblem):
+                scalarizer = Scalarizer(
+                    lambda x: self._problem.evaluate(x).objectives,
+                    asf,
+                    scalarizer_args={"reference_point": self._problem.evaluate(intermediate_points[i]).objectives},
+                )
 
-            if self._problem.n_of_constraints > 0:
-                cons = lambda x: self._problem.evaluate(x).constraints.squeeze()
+                if self._problem.n_of_constraints > 0:
+                    cons = lambda x: self._problem.evaluate(x).constraints.squeeze()
+                else:
+                    cons = None
+
+                solver = ScalarMinimizer(
+                    scalarizer, self._problem.get_variable_bounds(), cons, method=self._scalar_method,
+                )
+
+                res = solver.minimize(self._current_solution)
+                intermediate_solutions[i] = res["x"]
+                intermediate_objectives[i] = self._problem.evaluate(res["x"]).objectives
+
             else:
-                cons = None
+                # discrete case
+                scalarizer = DiscreteScalarizer(
+                    asf,
+                    scalarizer_args={
+                        "reference_point": self._problem.objectives[self._problem.find_closest(intermediate_points[i])]
+                    },
+                )
+                solver = DiscreteMinimizer(scalarizer)
 
-            solver = ScalarMinimizer(scalarizer, self._problem.get_variable_bounds(), cons, method=self._scalar_method,)
-
-            res = solver.minimize(self._current_solution)
-            intermediate_solutions[i] = res["x"]
-            intermediate_objectives[i] = self._problem.evaluate(res["x"]).objectives
+                res = solver.minimize(self._problem.objectives)
+                intermediate_solutions[i] = self._problem.decision_variables[res["x"]]
+                intermediate_objectives[i] = self._problem.objectives[res["x"]]
 
         # create appropiate requests
         save_request = NimbusSaveRequest(list(intermediate_solutions), list(intermediate_objectives))
@@ -717,39 +752,70 @@ class NIMBUS(InteractiveMethod):
         # always computed
         asf_1 = MaxOfTwoASF(self._nadir, self._ideal, improve_inds, improve_until_inds)
 
-        def cons_1(
-            x: np.ndarray,
-            f_current: np.ndarray = self._current_objectives,
-            levels: np.ndarray = levels,
-            improve_until_inds: np.ndarray = improve_until_inds,
-            improve_inds: np.ndarray = improve_inds,
-            impaire_until_inds: np.ndarray = impaire_until_inds,
-        ):
-            f = self._problem.evaluate(x).objectives.squeeze()
+        if isinstance(self._problem, MOProblem):
 
-            res_1 = f_current[improve_inds] - f[improve_inds]
-            res_2 = f_current[improve_until_inds] - f[improve_until_inds]
-            res_3 = levels[impaire_until_inds] - f[impaire_until_inds]
+            def cons_1(
+                x: np.ndarray,
+                f_current: np.ndarray = self._current_objectives,
+                levels: np.ndarray = levels,
+                improve_until_inds: np.ndarray = improve_until_inds,
+                improve_inds: np.ndarray = improve_inds,
+                impaire_until_inds: np.ndarray = impaire_until_inds,
+                acceptable_inds: np.ndarray = acceptable_inds,
+            ):
+                f = self._problem.evaluate(x).objectives.squeeze()
 
-            res = np.hstack((res_1, res_2, res_3))
+                res_1 = f_current[improve_inds] - f[improve_inds]
+                res_2 = f_current[improve_until_inds] - f[improve_until_inds]
+                res_3 = f_current[acceptable_inds] - f[acceptable_inds]
+                res_4 = levels[impaire_until_inds] - f[impaire_until_inds]
 
-            if self._problem.n_of_constraints > 0:
-                res_prob = self._problem.evaluate(x).constraints.squeeze()
+                res = np.hstack((res_1, res_2, res_3, res_4))
 
-                return np.hstack((res_prob, res))
+                if self._problem.n_of_constraints > 0:
+                    res_prob = self._problem.evaluate(x).constraints.squeeze()
 
-            else:
-                return res
+                    return np.hstack((res_prob, res))
 
-        scalarizer_1 = Scalarizer(
-            lambda x: self._problem.evaluate(x).objectives, asf_1, scalarizer_args={"reference_point": levels},
-        )
+                else:
+                    return res
 
-        solver_1 = ScalarMinimizer(
-            scalarizer_1, self._problem.get_variable_bounds(), cons_1, method=self._scalar_method,
-        )
+            scalarizer_1 = Scalarizer(
+                lambda x: self._problem.evaluate(x).objectives, asf_1, scalarizer_args={"reference_point": levels},
+            )
 
-        res_1 = solver_1.minimize(self._current_solution)
+            solver_1 = ScalarMinimizer(
+                scalarizer_1, self._problem.get_variable_bounds(), cons_1, method=self._scalar_method,
+            )
+
+            res_1 = solver_1.minimize(self._current_solution)
+
+        else:
+            # discrete case
+            def cons_1(
+                objective_vectors: np.ndarray,
+                f_current: np.ndarray = self._current_objectives,
+                levels: np.ndarray = levels,
+                improve_until_inds: np.ndarray = improve_until_inds,
+                improve_inds: np.ndarray = improve_inds,
+                impaire_until_inds: np.ndarray = impaire_until_inds,
+                acceptable_inds: np.ndarray = acceptable_inds,
+            ):
+                res_1 = f_current[improve_inds] - objective_vectors[:, improve_inds]
+                res_2 = f_current[improve_until_inds] - objective_vectors[:, improve_until_inds]
+                res_3 = f_current[acceptable_inds] - objective_vectors[:, acceptable_inds]
+                res_4 = levels[impaire_until_inds] - objective_vectors[:, impaire_until_inds]
+
+                res = np.hstack((res_1, res_2, res_3, res_4)) >= 0
+
+                return np.all(res, axis=1)
+
+            scalarizer_1 = DiscreteScalarizer(asf_1, scalarizer_args={"reference_point": levels})
+
+            solver_1 = DiscreteMinimizer(scalarizer_1, cons_1)
+
+            res_1 = solver_1.minimize(self._problem.objectives)
+
         results.append(res_1)
 
         if number_of_solutions > 1:
@@ -765,55 +831,92 @@ class NIMBUS(InteractiveMethod):
             asf_2 = StomASF(self._ideal)
 
             # cons_2 can be used in the rest of the ASF scalarizations, it's not a bug!
-            if self._problem.n_of_constraints > 0:
+            if isinstance(self._problem, MOProblem) and self._problem.n_of_constraints > 0:
                 cons_2 = lambda x: self._problem.evaluate(x).constraints.squeeze()
             else:
                 cons_2 = None
 
-            scalarizer_2 = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives, asf_2, scalarizer_args={"reference_point": z_bar},
-            )
+            if isinstance(self._problem, MOProblem):
+                scalarizer_2 = Scalarizer(
+                    lambda x: self._problem.evaluate(x).objectives, asf_2, scalarizer_args={"reference_point": z_bar},
+                )
 
-            solver_2 = ScalarMinimizer(
-                scalarizer_2, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
-            )
+                solver_2 = ScalarMinimizer(
+                    scalarizer_2, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
+                )
 
-            res_2 = solver_2.minimize(self._current_solution)
+                res_2 = solver_2.minimize(self._current_solution)
+
+            else:
+                # discrete case
+                scalarizer_2 = DiscreteScalarizer(asf_2, scalarizer_args={"reference_point": z_bar})
+
+                solver_2 = DiscreteMinimizer(scalarizer_2, cons_2)
+
+                res_2 = solver_2.minimize(self._problem.objectives)
+
             results.append(res_2)
 
         if number_of_solutions > 2:
             # asf 3
             asf_3 = PointMethodASF(self._nadir, self._ideal)
 
-            scalarizer_3 = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives, asf_3, scalarizer_args={"reference_point": z_bar},
-            )
+            if isinstance(self._problem, MOProblem):
+                scalarizer_3 = Scalarizer(
+                    lambda x: self._problem.evaluate(x).objectives, asf_3, scalarizer_args={"reference_point": z_bar},
+                )
 
-            solver_3 = ScalarMinimizer(
-                scalarizer_3, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
-            )
+                solver_3 = ScalarMinimizer(
+                    scalarizer_3, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
+                )
 
-            res_3 = solver_3.minimize(self._current_solution)
+                res_3 = solver_3.minimize(self._current_solution)
+
+            else:
+                # discrete case
+                scalarizer_3 = DiscreteScalarizer(asf_3, scalarizer_args={"reference_point": z_bar})
+
+                solver_3 = DiscreteMinimizer(scalarizer_3, cons_2)
+
+                res_3 = solver_3.minimize(self._problem.objectives)
+
             results.append(res_3)
 
         if number_of_solutions > 3:
             # asf 4
             asf_4 = AugmentedGuessASF(self._nadir, self._ideal, free_inds)
 
-            scalarizer_4 = Scalarizer(
-                lambda x: self._problem.evaluate(x).objectives, asf_4, scalarizer_args={"reference_point": z_bar},
-            )
+            if isinstance(self._problem, MOProblem):
 
-            solver_4 = ScalarMinimizer(
-                scalarizer_4, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
-            )
+                scalarizer_4 = Scalarizer(
+                    lambda x: self._problem.evaluate(x).objectives, asf_4, scalarizer_args={"reference_point": z_bar},
+                )
 
-            res_4 = solver_4.minimize(self._current_solution)
+                solver_4 = ScalarMinimizer(
+                    scalarizer_4, self._problem.get_variable_bounds(), cons_2, method=self._scalar_method,
+                )
+
+                res_4 = solver_4.minimize(self._current_solution)
+
+            else:
+                # discrete case
+                scalarizer_4 = DiscreteScalarizer(asf_4, scalarizer_args={"reference_point": z_bar})
+
+                solver_4 = DiscreteMinimizer(scalarizer_4, cons_2)
+
+                res_4 = solver_4.minimize(self._problem.objectives)
+
             results.append(res_4)
 
         # create the save request
-        solutions = [res["x"] for res in results]
-        objectives = [self._problem.evaluate(x).objectives.squeeze() for x in solutions]
+        if isinstance(self._problem, MOProblem):
+            solutions = [res["x"] for res in results]
+            objectives = [self._problem.evaluate(x).objectives.squeeze() for x in solutions]
+
+        else:
+            # discrete case
+            solutions = [self._problem.decision_variables[res["x"]] for res in results]
+            objectives = [self._problem.objectives[res["x"]] for res in results]
 
         save_request = NimbusSaveRequest(solutions, objectives)
 
@@ -994,45 +1097,40 @@ if __name__ == "__main__":
     """
 
     import matplotlib.pyplot as plt
-    from desdeo_problem.Variable import variable_builder
     from desdeo_problem.Objective import _ScalarObjective
+    from desdeo_problem.Variable import variable_builder
 
     def f_1(xs: np.ndarray):
         xs = np.atleast_2d(xs)
         xs_plusone = np.roll(xs, 1, axis=1)
-        return np.sum(-10*np.exp(-0.2*np.sqrt(xs[:, :-1]**2 + xs_plusone[:, :-1]**2)), axis=1)
+        return np.sum(-10 * np.exp(-0.2 * np.sqrt(xs[:, :-1] ** 2 + xs_plusone[:, :-1] ** 2)), axis=1)
 
     def f_2(xs: np.ndarray):
         xs = np.atleast_2d(xs)
-        return np.sum(np.abs(xs)**0.8 + 5*np.sin(xs**3), axis=1)
+        return np.sum(np.abs(xs) ** 0.8 + 5 * np.sin(xs ** 3), axis=1)
 
     varsl = variable_builder(
-        ["x_1", "x_2", "x_3"],
-        initial_values=[0, 0, 0],
-        lower_bounds=[-5, -5, -5],
-        upper_bounds=[5, 5, 5],
+        ["x_1", "x_2", "x_3"], initial_values=[0, 0, 0], lower_bounds=[-5, -5, -5], upper_bounds=[5, 5, 5],
     )
 
     f1 = _ScalarObjective(name="f1", evaluator=f_1)
     f2 = _ScalarObjective(name="f2", evaluator=f_2)
 
-    #For AI_DM ranges are always defined as IDEAL, NADIR.
+    # For AI_DM ranges are always defined as IDEAL, NADIR.
     f1_range = [-20, -14]
     f2_range = [-14, 0.5]
     x1 = np.linspace(min(f1_range), max(f1_range), 1000)
     x2 = np.linspace(min(f2_range), max(f2_range), 1000)
     y = np.linspace(0, 0, 1000)
 
-
-
     problem = MOProblem(variables=varsl, objectives=[f1, f2], ideal=np.array([-20, -12]), nadir=np.array([-14, 0.5]))
 
     from desdeo_mcdm.interactive.NIMBUS import NIMBUS
-    from scipy.optimize import minimize, differential_evolution
+    from scipy.optimize import differential_evolution, minimize
 
-
-    scalar_method = ScalarMethod(lambda x, _, **y: differential_evolution(x, **y), use_scipy=True,
-            method_args={"polish": True, "disp": True})
+    scalar_method = ScalarMethod(
+        lambda x, _, **y: differential_evolution(x, **y), use_scipy=True, method_args={"polish": True, "disp": True}
+    )
 
     method = NIMBUS(problem, scalar_method)
 
@@ -1043,29 +1141,29 @@ if __name__ == "__main__":
 
     print(classification_request.content["objective_values"])
 
-    #Ploting F1!
+    # Ploting F1!
     plt.scatter(x1, y, label="Range")
-    plt.scatter(-15, 0, label="P1", c='r')
-    plt.scatter(-18, 0, label="P2", c='r')
-    plt.scatter(classification_request.content["objective_values"][0], 0, label = "Present Position")
+    plt.scatter(-15, 0, label="P1", c="r")
+    plt.scatter(-18, 0, label="P2", c="r")
+    plt.scatter(classification_request.content["objective_values"][0], 0, label="Present Position")
     plt.xlabel("Objective Function")
     plt.ylabel("Value")
     plt.title("Objective Function F1")
 
     plt.show()
 
-    #Ploting F2!
+    # Ploting F2!
     plt.scatter(x2, y, label="Range")
-    plt.scatter(-6, 0, label="P1", c='r')
-    plt.scatter(-9, 0, label="P2", c='r')
-    plt.scatter(classification_request.content["objective_values"][1], 0, label = "Present Position")
+    plt.scatter(-6, 0, label="P1", c="r")
+    plt.scatter(-9, 0, label="P2", c="r")
+    plt.scatter(classification_request.content["objective_values"][1], 0, label="Present Position")
     plt.xlabel("Objective Function")
     plt.ylabel("Value")
     plt.title("Objective Function F2")
 
     plt.show()
 
-    response = {'classifications': ['<', '>='], 'levels': [0, -7.133133133133133], 'number_of_solutions': 1}
+    response = {"classifications": ["<", "="], "levels": [-7.133133133133133, 0], "number_of_solutions": 1}
     classification_request.response = response
 
     save_request, plot_request = method.iterate(classification_request)
@@ -1073,22 +1171,22 @@ if __name__ == "__main__":
     print(save_request.content["objectives"])
     print(save_request.content["solutions"])
 
-    #Ploting F1!
+    # Ploting F1!
     plt.scatter(x1, y, label="Range")
-    plt.scatter(-15, 0, label="P1", c='r')
-    plt.scatter(-18, 0, label="P2", c='r')
-    plt.scatter(save_request.content["objectives"][0][0], 0, label = "Present Position")
+    plt.scatter(-15, 0, label="P1", c="r")
+    plt.scatter(-18, 0, label="P2", c="r")
+    plt.scatter(save_request.content["objectives"][0][0], 0, label="Present Position")
     plt.xlabel("Objective Function")
     plt.ylabel("Value")
     plt.title("Objective Function F1")
 
     plt.show()
 
-    #Ploting F2!
+    # Ploting F2!
     plt.scatter(x2, y, label="Range")
-    plt.scatter(-6, 0, label="P1", c='r')
-    plt.scatter(-9, 0, label="P2", c='r')
-    plt.scatter(save_request.content["objectives"][0][1], 0, label = "Present Position")
+    plt.scatter(-6, 0, label="P1", c="r")
+    plt.scatter(-9, 0, label="P2", c="r")
+    plt.scatter(save_request.content["objectives"][0][1], 0, label="Present Position")
     plt.xlabel("Objective Function")
     plt.ylabel("Value")
     plt.title("Objective Function F2")

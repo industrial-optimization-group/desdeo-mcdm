@@ -3,7 +3,7 @@ from typing import Callable, Dict, List, Optional, Union
 import numpy as np
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_problem.Objective import VectorObjective, _ScalarObjective
-from desdeo_problem.Problem import MOProblem
+from desdeo_problem.Problem import DiscreteDataProblem, MOProblem
 from desdeo_problem.Variable import variable_builder
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
@@ -14,14 +14,6 @@ from scipy.optimize import differential_evolution
 """
 Reference Point Method (RPM)
 """
-
-
-class DiscreteData:
-    def __init__(self, data, variable_names, objective_names, ideal, nadir):
-        self.decision_variables = data[variable_names].values
-        self.objectives = data[objective_names].values
-        self.ideal = ideal
-        self.nadir = nadir
 
 
 class RPMException(Exception):
@@ -251,7 +243,7 @@ class ReferencePointMethod(InteractiveMethod):
 
     def __init__(
         self,
-        problem: Union[MOProblem, DiscreteData],
+        problem: Union[MOProblem, DiscreteDataProblem],
         ideal: np.ndarray,
         nadir: np.ndarray,
         epsilon: float = 1e-6,
