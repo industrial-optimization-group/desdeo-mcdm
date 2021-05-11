@@ -8,7 +8,7 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = ">=3.7.0,<3.10"
 desdeo-tools = "^1.4.1"
-desdeo-problem = "^1.2.0"
+desdeo-problem = "^1.2.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.1"
