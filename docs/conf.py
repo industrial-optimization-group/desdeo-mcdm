@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.abspath("../desdeo_mcdm"))
 # -- Project information -----------------------------------------------------
 
 project = "desdeo_mcdm"
-copyright = "2020, Giovanni Misitano"
-author = "Giovanni Misitano"
+copyright = "2021, Multiobjective Optimization Group"
+author = "Multiobjective Optimization Group"
 
 # The full version, including alpha/beta/rc tags
 release = "1.0"
@@ -68,7 +68,7 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
 
 # -- Options for HTML output -------------------------------------------------
