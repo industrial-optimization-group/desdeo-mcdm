@@ -24,7 +24,7 @@ class NautilusNavigatorRequest(BaseRequest):
         step_number: int,
         steps_remaining: int,
         distance: float,
-        allowed_speeds: [int],
+        allowed_speeds: List[int],
         current_speed: int,
         navigation_point: np.ndarray,
     ):
@@ -36,7 +36,7 @@ class NautilusNavigatorRequest(BaseRequest):
             "desired, please set `go_to_previous` to True, otherwise it should "
             "be False. "
             "Lastly, if stopping is desired, `stop` should be True, "
-            "otherweise it should be set to False."
+            "otherwise it should be set to False."
         )
         content = {
             "message": msg,
@@ -182,7 +182,7 @@ class NautilusNavigator(InteractiveMethod):
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise NautilusNavigatorException(
-                    "The supplied objective names must have a leangth equal to " "the numbr of objectives."
+                    "The supplied objective names must have a length equal to " "the number of objectives."
                 )
             self._objective_names = objective_names
         else:
@@ -203,7 +203,7 @@ class NautilusNavigator(InteractiveMethod):
         # in objective space!
         self._pareto_front = pareto_front
 
-        # bounds of the rechable region
+        # bounds of the reachable region
         self._reachable_ub = self._nadir
         self._reachable_lb = self._ideal
 
@@ -295,7 +295,7 @@ class NautilusNavigator(InteractiveMethod):
         distance: Optional[float] = None,
         steps_remaining: Optional[int] = None,
     ) -> Optional[NautilusNavigatorRequest]:
-        """Update the inernal state of self.
+        """Update the internal state of self.
 
         Args:
             ref_point (np.ndarray): A reference point given by a decision maker.
@@ -309,10 +309,10 @@ class NautilusNavigator(InteractiveMethod):
             navigation point. Relevant if go_to_previous is True. Defaults to
             None.
             lower_bounds (Optional[np.ndarray], optional): Lower bounds of
-            the reachable objective vector valus. Relevant if go_to_previous
+            the reachable objective vector values. Relevant if go_to_previous
             is True. Defaults to None.
             upper_bounds (Optional[np.ndarray], optional): Upper bounds of
-            the reachable objective vector valus. Relevant if go_to_previous
+            the reachable objective vector values. Relevant if go_to_previous
             is True. Defaults to None.
             reachable_idx (Optional[List[int]], optional): Indices of the
             reachable Pareto optimal solutions. Relevant if go_to_previous is
@@ -324,7 +324,7 @@ class NautilusNavigator(InteractiveMethod):
             navigation. Relevant if go_to_previous is True. Defaults to None.
 
         Returns:
-            NautilusNavigatorRequest: Some of the given parameters are erraneous.
+            NautilusNavigatorRequest: Some of the given parameters are erroneous.
         """
         # go to a previous state
         if go_to_previous:
@@ -405,10 +405,10 @@ class NautilusNavigator(InteractiveMethod):
         return reachable_idx
 
     def solve_nautilus_asf_problem(
-        self, pareto_f: np.ndarray, subset_indices: [int], ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,
+        self, pareto_f: np.ndarray, subset_indices: List[int], ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,
     ) -> int:
         """Forms and solves the achievement scalarizing function to find the
-        closesto point on the Pareto optimal front to the given reference
+        closest point on the Pareto optimal front to the given reference
         point.
 
         Args:
