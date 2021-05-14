@@ -41,7 +41,7 @@ class NimbusClassificationRequest(BaseRequest):
             "\n\t4. values which may be impaired until some upper bound is reached '>='"
             "\n\t5. values which are free to change '0'"
             "\nProvide the aspiration levels and upper bounds as a vector. For categories 1, 3, and 5,"
-            "the value in the vector at the objective's position is ignored. Suppy also the number of maximum"
+            "the value in the vector at the objective's position is ignored. Supply also the number of maximum"
             "solutions to be generated."
         )
 
@@ -87,7 +87,7 @@ class NimbusClassificationRequest(BaseRequest):
         is_valid_cls = map(lambda x: x in self._valid_classifications, response["classifications"],)
 
         if not all(list(is_valid_cls)):
-            raise NimbusException(f"Invalid classificaiton found in {response['classifications']}")
+            raise NimbusException(f"Invalid classification found in {response['classifications']}")
 
         # check the levels
         if len(np.array(response["levels"]).squeeze()) != self._method._problem.n_of_objectives:
@@ -142,7 +142,7 @@ class NimbusSaveRequest(BaseRequest):
     ):
         msg = (
             "Please specify which solutions shown you would like to save for later viewing. Supply the "
-            "indices of such solutions as a list, or supply an empty list if none of the shown soulutions "
+            "indices of such solutions as a list, or supply an empty list if none of the shown solutions "
             "should be saved."
         )
         content = {
@@ -203,7 +203,7 @@ class NimbusIntermediateSolutionsRequest(BaseRequest):
         self, solution_vectors: List[np.ndarray], objective_vectors: List[np.ndarray],
     ):
         msg = (
-            "Would you like to see intermediate solutions between two previusly computed solutions? "
+            "Would you like to see intermediate solutions between two previously computed solutions? "
             "If so, please supply two indices corresponding to the solutions."
         )
 
@@ -267,7 +267,7 @@ class NimbusMostPreferredRequest(BaseRequest):
 
     Note:
         The objective vector at position 'i' in `objective_vectors` should correspond to the decision variables at
-        position 'i' in `solution_vectors`. Only the two first entries in each of the lists is relevant. The preferred
+        position 'i' in `solution_vectors`. Only the two first entries in each of the lists are relevant. The preferred
         solution will be selected from `objective_vectors`.
 
     """
@@ -467,7 +467,7 @@ class NIMBUS(InteractiveMethod):
         """Handles a classification request.
         
         Args:
-            request (NimbusClassificationReuest): A classification request with the
+            request (NimbusClassificationRequest): A classification request with the
                 response attribute set.
         
         Returns:
@@ -545,7 +545,7 @@ class NIMBUS(InteractiveMethod):
     def handle_most_preferred_request(
         self, request: NimbusMostPreferredRequest
     ) -> Tuple[Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest]:
-        """Handles a preferres solution request.
+        """Handles a preferred solution request.
         
         Args:
             request (NimbusMostPreferredRequest): A NIMBUS preferred solution request with the
@@ -553,7 +553,7 @@ class NIMBUS(InteractiveMethod):
         
         Returns:
             Tuple[Union[NimbusClassificationRequest, NimbusStopRequest], SimplePlotRequest]:
-            Return a classificaiton request if the decision maker wishes to continue. If the
+            Return a classification request if the decision maker wishes to continue. If the
             decision maker wishes to stop, return a stop request. Also return a plot 
             request with all the solutions saved so far.
         """
@@ -611,10 +611,10 @@ class NIMBUS(InteractiveMethod):
     def compute_intermediate_solutions(
         self, solutions: np.ndarray, n_desired: int,
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
-        """Computs intermediate solution between two solutions computed earlier.
+        """Computes intermediate solution between two solutions computed earlier.
 
         Args:
-            solutions (np.ndarray): The solutions between which the intermediat solutions should
+            solutions (np.ndarray): The solutions between which the intermediate solutions should
                 be computed.
             n_desired (int): The number of intermediate solutions desired.
         
@@ -622,7 +622,7 @@ class NIMBUS(InteractiveMethod):
             NimbusException
         
         Returns:
-            Tuple[NimbusSaveRequest, SimplePlotRequest]: A save request with the compured intermediate
+            Tuple[NimbusSaveRequest, SimplePlotRequest]: A save request with the computed intermediate
             points, and a plot request to visualize said points.
         """
         # vector between the two solutions
@@ -676,7 +676,7 @@ class NIMBUS(InteractiveMethod):
                 intermediate_solutions[i] = self._problem.decision_variables[res["x"]]
                 intermediate_objectives[i] = self._problem.objectives[res["x"]]
 
-        # create appropiate requests
+        # create appropriate requests
         save_request = NimbusSaveRequest(list(intermediate_solutions), list(intermediate_objectives))
 
         msg = "Computed intermediate solutions"
@@ -730,7 +730,7 @@ class NIMBUS(InteractiveMethod):
         impaire_until_inds: np.ndarray,
         free_inds: np.ndarray,
     ) -> Tuple[NimbusSaveRequest, SimplePlotRequest]:
-        """Calcualtes new solutions based on classifications supplied by the decision maker by
+        """Calculates new solutions based on classifications supplied by the decision maker by
             solving ASF problems.
         
         Args:
@@ -744,7 +744,7 @@ class NIMBUS(InteractiveMethod):
             free_inds (np.ndarray): Indices of objectives which may change freely.
         
         Returns:
-            Tuple[NimbusSaveRequest, SimplePlotRequest]: A save request with the newly computed soutions, and 
+            Tuple[NimbusSaveRequest, SimplePlotRequest]: A save request with the newly computed solutions, and 
             a plot request to visualize said solutions.
         """
         results = []
@@ -960,14 +960,14 @@ class NIMBUS(InteractiveMethod):
         Union[NimbusClassificationRequest, NimbusSaveRequest, NimbusIntermediateSolutionsRequest,],
         Union[SimplePlotRequest, None],
     ]:
-        """Implements a finite state machine to iterate over the different steps defined in Synchronous NIMBUS based on a supllied request.
+        """Implements a finite state machine to iterate over the different steps defined in Synchronous NIMBUS based on a supplied request.
         
         Args:
             request (Union[NimbusClassificationRequest,NimbusSaveRequest,NimbusIntermediateSolutionsRequest,NimbusMostPreferredRequest,NimbusStopRequest,]):
                 A request based on the next step in the NIMBUS algorithm is taken.
         
         Raises:
-            NimbusException: If a wrong type of request is supllied based on the current state NIMBUS is in.
+            NimbusException: If a wrong type of request is supplied based on the current state NIMBUS is in.
         
         Returns:
             Tuple[Union[NimbusClassificationRequest,NimbusSaveRequest,NimbusIntermediateSolutionsRequest,],Union[SimplePlotRequest, None],]:
@@ -1141,7 +1141,7 @@ if __name__ == "__main__":
 
     print(classification_request.content["objective_values"])
 
-    # Ploting F1!
+    # Plotting F1!
     plt.scatter(x1, y, label="Range")
     plt.scatter(-15, 0, label="P1", c="r")
     plt.scatter(-18, 0, label="P2", c="r")
@@ -1152,7 +1152,7 @@ if __name__ == "__main__":
 
     plt.show()
 
-    # Ploting F2!
+    # Plotting F2!
     plt.scatter(x2, y, label="Range")
     plt.scatter(-6, 0, label="P1", c="r")
     plt.scatter(-9, 0, label="P2", c="r")
@@ -1171,7 +1171,7 @@ if __name__ == "__main__":
     print(save_request.content["objectives"])
     print(save_request.content["solutions"])
 
-    # Ploting F1!
+    # Plotting F1!
     plt.scatter(x1, y, label="Range")
     plt.scatter(-15, 0, label="P1", c="r")
     plt.scatter(-18, 0, label="P2", c="r")
@@ -1182,7 +1182,7 @@ if __name__ == "__main__":
 
     plt.show()
 
-    # Ploting F2!
+    # Plotting F2!
     plt.scatter(x2, y, label="Range")
     plt.scatter(-6, 0, label="P1", c="r")
     plt.scatter(-9, 0, label="P2", c="r")
