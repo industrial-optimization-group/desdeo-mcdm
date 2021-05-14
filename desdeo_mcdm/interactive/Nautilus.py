@@ -85,7 +85,7 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
             raise NautilusException(msg)
         elif not (1 <= max(response["preference_info"]) <= n_objectives):
             msg = "The minimum index of importance must be greater or equal "
-            "to 1 and the maximum index of improtance must be less "
+            "to 1 and the maximum index of importance must be less "
             "than or equal to the number of objectives in the "
             "problem, which is {}. Check the indices {}" \
                 .format(n_objectives, response["preference_info"])
@@ -359,7 +359,7 @@ class Nautilus(InteractiveMethod):
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise NautilusException(
-                    "The supplied objective names must have a length equal to " "the numbr of objectives."
+                    "The supplied objective names must have a length equal to " "the number of objectives."
                 )
             self._objective_names = objective_names
         else:
