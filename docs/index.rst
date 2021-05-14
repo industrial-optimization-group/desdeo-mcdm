@@ -98,7 +98,7 @@ Coming soon
 ===========
 
 - Pareto Navigator
-- NAUTILUSv2
+
 
 Indices and tables
 ==================
