@@ -108,7 +108,7 @@ def payoff_table_method(
             to be used in the solver. If None, uses the lower bounds defined for
             the variables in MOProblem. Defaults to None.
         solver_method (Optional[Union[ScalarMethod, str]]): The method used to minimize the
-            invidual problems in the payoff table method. Defaults to 'scipy_de'.
+            individual problems in the payoff table method. Defaults to 'scipy_de'.
     
     Returns:
         Tuple[np.ndarray, np.ndarray]: The ideal and nadir points
@@ -140,10 +140,10 @@ def solve_pareto_front_representation_general(
     solver_method: Optional[Union[ScalarMethod, str]] = "scipy_de",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Computes a representation of a Pareto efficient front from a
-    multiobjective minimizatino problem. Does so by generating an evenly spaced
+    multiobjective minimization problem. Does so by generating an evenly spaced
     set of reference points (in the objective space), in the space spanned by
     the supplied ideal and nadir points. The generated reference points are
-    then used to formulate achievement scalaraization problems, which when
+    then used to formulate achievement scalarization problems, which when
     solved, yield a representation of a Pareto efficient solution. The result
     is guaranteed to contain only non-dominated solutions.
     
@@ -151,13 +151,13 @@ def solve_pareto_front_representation_general(
         objective_evaluator (Callable[[np.ndarray], np.ndarray]): A vector
             valued function returning objective values given an array of decision
             variables.
-        n_of_objectives (int): Numbr of objectives returned by
+        n_of_objectives (int): Number of objectives returned by
             objective_evaluator.
         variable_bounds (np.ndarray): The upper and lower bounds of the
             decision variables. Bound for each variable should be on the rows,
             with the first column containing lower bounds, and the second column
             upper bounds. Use np.inf to indicate no bounds.
-        step (Optional[Union[np.ndarray, float]], optional): Etiher an float
+        step (Optional[Union[np.ndarray, float]], optional): Either an float
             or an array of floats. If a single float is given, generates
             reference points with the objectives having values a step apart
             between the ideal and nadir points. If an array of floats is given,
@@ -185,7 +185,7 @@ def solve_pareto_front_representation_general(
         step is something else than np.ndarray of float.
     
     Returns:
-        Tuple[np.ndarray, np.ndarray]: A tuple containing representationns of
+        Tuple[np.ndarray, np.ndarray]: A tuple containing representations of
         the Pareto optimal variable values, and the corresponsing objective
         values.
 
@@ -266,10 +266,10 @@ def solve_pareto_front_representation(
     MOProblem object.
     
     Computes a representation of a Pareto efficient front
-    from a multiobjective minimizatino problem. Does so by generating an
+    from a multiobjective minimization problem. Does so by generating an
     evenly spaced set of reference points (in the objective space), in the
     space spanned by the supplied ideal and nadir points. The generated
-    reference points are then used to formulate achievement scalaraization
+    reference points are then used to formulate achievement scalarization
     problems, which when solved, yield a representation of a Pareto efficient
     solution.
     
