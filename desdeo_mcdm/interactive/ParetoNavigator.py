@@ -1,3 +1,4 @@
+from desdeo_mcdm.interactive.Nautilus import NautilusException
 from desdeo_problem.Problem import MOProblem
 from desdeo_tools.scalarization.ASF import PointMethodASF, ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
@@ -14,9 +15,7 @@ from scipy.optimize import linprog, differential_evolution
 
 #TODO
 # Scipy linprog failing :/
-# Request: Step back, speed messages
 # Request validations
-# Request handling documentation in ParetoNavigator
 # Initial preference as ref point
 # Classification to ref point
 # final solution projection to actual po set
@@ -25,6 +24,7 @@ from scipy.optimize import linprog, differential_evolution
 # Plot requests
 # A lot of checking and validation
 # scalar method in init
+# Remove new direction from request
 class ParetoNavigatorException(Exception):
     """Raised when an exception related to Pareto Navigator is encountered.
     """
@@ -32,7 +32,6 @@ class ParetoNavigatorException(Exception):
     pass
 
 
-# TODO preferred solution preference
 class ParetoNavigatorInitialRequest(BaseRequest):
     """
     A request class to handle the Decision Maker's initial preferences for the first iteration round.
@@ -41,20 +40,28 @@ class ParetoNavigatorInitialRequest(BaseRequest):
     point for the navigation phase.
     """
 
-    def __init__(self, ideal: np.ndarray, nadir: np.ndarray) -> None:
+    def __init__(self, ideal: np.ndarray, nadir: np.ndarray, allowed_speeds: np.ndarray) -> None:
         """
         Initialize with ideal and nadir vectors.
 
         Args:
-            ideal (np.ndarray): Ideal vector. Only needed if using ref point
-            nadir (np.ndarray): Nadir vector.Only needed if using ref point
+            ideal (np.ndarray): Ideal vector
+            nadir (np.ndarray): Nadir vector
+            allowed_speeds (np.ndarray): Allowed movement speeds
         """
 
         self._ideal = ideal
         self._nadir = nadir
+        self._allowed_speeds = allowed_speeds
+
+        min_speed = np.min(self._allowed_speeds)
+        max_speed = np.max(self._allowed_speeds)
 
         msg = "Please specify a starting point as 'preferred_solution'."
         "Or specify a reference point as 'reference_point'."
+        "Please specify speed as 'speed' to be an integer value between"
+        f"{min_speed} and {max_speed} "
+        f"where {min_speed} is the slowest speed and {max_speed} the fastest."
 
         content = {
             "message": msg,
@@ -76,7 +83,7 @@ class ParetoNavigatorInitialRequest(BaseRequest):
             RPMInitialRequest: Initial request.
         """
 
-        return cls(method._ideal, method._nadir)
+        return cls(method._ideal, method._nadir, method._allowed_speeds)
 
     @BaseRequest.response.setter
     def response(self, response: Dict) -> None:
@@ -100,6 +107,20 @@ class ParetoNavigatorInitialRequest(BaseRequest):
             msg = "Please specify either a starting point as 'preferred_solution'."
             "or a reference point as 'reference_point."
             raise ParetoNavigatorException(msg)
+        
+        if 'speed' not in response:
+            msg = "Please specify a speed as 'speed'"
+            raise ParetoNavigatorException(msg)
+        
+        speed = response['speed']
+        try:
+            if int(speed) not in self._allowed_speeds:
+                raise ParetoNavigatorException(f"Invalid speed: {speed}.")
+        except Exception as e:
+            raise ParetoNavigatorException(
+                f"An exception rose when validating the given speed {speed}.\n"
+                f"Previous exception: {type(e)}: {str(e)}."
+            )
             
         self._response = response
 
@@ -114,6 +135,8 @@ class ParetoNavigatorRequest(BaseRequest):
         current_solution: np.ndarray, 
         ideal: np.ndarray, 
         nadir: np.ndarray,
+        allowed_speeds: np.ndarray,
+        valid_classifications: np.ndarray,
     ) -> None:
         """
         Initialize request with current iterations's solution process information.
@@ -122,21 +145,35 @@ class ParetoNavigatorRequest(BaseRequest):
             current_solution (np.ndarray): Current solution.
             ideal (np.ndarray): Ideal vector.
             nadir (np.ndarray): Nadir vector.
+            allowed_speeds (np.ndarray): Allowed movement speeds
+            valid_classifications (np.ndarray): Valid classifications
         """
 
         self._current_solution = current_solution
         self._ideal = ideal
         self._nadir = nadir
+        self._allowed_speeds = allowed_speeds
+        self._valid_classifications = valid_classifications
 
-        msg = (
+        min_speed = np.min(self._allowed_speeds)
+        max_speed = np.max(self._allowed_speeds)
+
+        msg = ( # TODO more understandable 
             "If you are satisfied with the current solution, please state: "
             "'satisfied' as 'True'. "
-            "If you are not satisfied with the current solution "
-            "and wish to change the direction, please state: "
-            "1. 'new_direction' as 'True'. "
-            "2. 'reference_point' a new reference point "
-            "If you wish to continue to the same direction, state: "
-            "'new_direction' as 'False' "
+            "If you wish to change the direction, please state:"
+            "'new_direction' as 'True' AND"
+            "specify a 'preference_method' as either"
+            "1 = 'reference_point' OR 2 = 'preference_info'"
+            "Depending on your selection on 'preference_method', please specify either"
+            "'reference_point' as a new reference point OR"
+            "classification' as a list of strings"
+            "If you wish to step back specify 'step_back' as 'True'"
+            "If you wish to change the speed, please specify speed"
+            "as 'speed' to be an integer value between"
+            f"{min_speed} and {max_speed} "
+            f"where {min_speed} is the slowest speed and {max_speed} the fastest."
+
         )
 
         content = {"message": msg, "current_solution": current_solution}
@@ -154,7 +191,13 @@ class ParetoNavigatorRequest(BaseRequest):
             ParetoNavigatorRequest: Initial request.
         """
 
-        return cls(method._current_solution, method._ideal, method._nadir)
+        return cls(
+            method._current_solution,
+            method._ideal,
+            method._nadir,
+            method._allowed_speeds,
+            method._valid_classifications,
+        )
 
     @BaseRequest.response.setter
     def response(self, response: Dict) -> None:
@@ -167,12 +210,55 @@ class ParetoNavigatorRequest(BaseRequest):
         Raises:
             ParetoNavigatorException: In case response is invalid.
         """
-        # if ("new_direction" in response and response['new_direction']):
-        #     if 'satisfied' in response and not response['satisfied']:
-        #         if "reference_point" not in response:
-        #             raise ParetoNavigatorException("New reference point information missing. Please specify it as 'reference_point'.")
-        #     else:
-        #         validate_reference_point(response["reference_point"], self._ideal, self._nadir)
+
+        if 'satisfied' in response and response['satisfied']:
+            self._response = response
+            return
+
+        if 'speed' not in response:
+            raise ParetoNavigatorException("Please specify a speed")
+        speed = response["speed"]
+        try:
+            if int(speed) not in self._allowed_speeds:
+                raise ParetoNavigatorException(f"Invalid speed: {speed}.")
+        except Exception as e:
+            raise ParetoNavigatorException(
+                f"An exception rose when validating the given speed {speed}.\n"
+                f"Previous exception: {type(e)}: {str(e)}."
+            )
+        
+        if 'new_direction' in response and response['new_direction']:
+            if 'preference_method' not in response:
+                msg = "Specify a preference as 'preference_method' method when changing direction"
+                raise ParetoNavigatorException(msg)
+
+            
+            try:
+                pref_method = int(response['preference_method'])
+                if pref_method == 1:
+                    if 'reference_point' not in response:
+                        msg = "Specify a reference point when using reference point preference"
+                        raise ParetoNavigatorException(msg)
+                    else: # Validate reference point
+                        validate_reference_point(response['reference_point'], self._ideal, self._nadir)
+                elif pref_method == 2:
+                    if 'classification' not in response:
+                        msg = "Specify classifications when using classification prefence"
+                        raise ParetoNavigatorException(msg)
+                    else: # Validate classifications
+                        classifications = np.unique(response['classification'])
+                        if not np.array_equal(np.sort(self._valid_classifications), classifications):
+                            msg = "Invalid classifications"
+                            raise ParetoNavigatorException(msg)
+                else: # Not 1 or 2
+                    msg = "Preference method should be an integer value either 1 or 2"
+                    raise ParetoNavigatorException(msg)
+                response['preference_method'] = pref_method # Make sure is integer either 1 or 2
+            except Exception as e:
+                raise ParetoNavigatorException(f"Previous exception: {type(e)}: {str(e)}.")
+        else: # New direction false or not specified
+            response['new_direction'] = False # Is setting responses fine?
+
 
         self._response = response
 
@@ -191,7 +277,7 @@ class ParetoNavigatorStopRequest(BaseRequest):
             objective_values (np.ndarray): Objective vector.
         """
         msg = "Final solution found."
-        # TODO projection to actual PO set
+
         content = {
             "message": msg,
             "final_solution": final_solution,
@@ -202,23 +288,34 @@ class ParetoNavigatorStopRequest(BaseRequest):
 
 
 class ParetoNavigator(InteractiveMethod):
+    """
+    Paretonavigator as described in 'Pareto navigator for interactive nonlinear
+    multiobjective optimization' (2008) [Petri Eskelinen · Kaisa Miettinen ·
+    Kathrin Klamroth · Jussi Hakanen]. 
 
+    Args:
+        problem (MOProblem): The problem to be solved.
+        pareto_optimal_solutions (np.ndarray): Some pareto optimal solutions to construct the polyhedral set
+    """
     def __init__(
         self,
         problem: MOProblem,
         pareto_optimal_solutions: np.ndarray, # Initial pareto optimal solutions
-        ideal: np.ndarray,
-        nadir: np.ndarray,
         epsilon: float = 1e-6, # No need?
         # scalar_method: Optional[ScalarMethod] = None
     ):
         if not ideal.shape == nadir.shape:
             raise ParetoNavigatorException("The dimensions of the ideal and nadir point do not match.")
+        
+        # if scalar_method:
+        #     self._scalar_method = scalar_method
+        # else: 
+        #     self._scalar_method = 
 
         self._problem = problem
 
-        self._ideal = ideal
-        self._nadir = nadir
+        self._ideal = problem.ideal
+        self._nadir = problem.nadir
         self._utopian = ideal - epsilon # No need?
         self._n_objectives = self._ideal.shape[0]
 
@@ -235,12 +332,14 @@ class ParetoNavigator(InteractiveMethod):
         self._variable_vectors = None
         self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
 
-        self._allowed_speeds = [1, 2, 3, 4, 5] # Some validation, 1 is slowest
-        self._current_speed = 1
-        self._reference_point = None
+        self._allowed_speeds = [1, 2, 3, 4, 5]
 
+        # Improve, degrade, maintain, 
+        self._valid_classifications = ["<", ">", "="]
+
+        self._current_speed = None
+        self._reference_point = None
         self._current_solution = None
-        
         self._direction = None
     
     def start(self):
@@ -273,16 +372,19 @@ class ParetoNavigator(InteractiveMethod):
     def handle_initial_request(self, request: ParetoNavigatorInitialRequest) -> ParetoNavigatorRequest:
         if "reference_point" in request.response:
             self._reference_point = request.response["reference_point"]
-            # set starting point
             starting_point = self._reference_point # TODO, ref point -> starting point
         else: # Preferred po solution
             starting_point = self._pareto_optimal_solutions[request.response["preferred_solution"]]
 
         self._current_solution = starting_point
+        self._current_speed = request.response['speed']
 
         return ParetoNavigatorRequest.init_with_method(self)
 
-    def handle_request(self, request: ParetoNavigatorRequest) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
+    def handle_request(
+        self,
+        request: ParetoNavigatorRequest
+    ) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
         
         resp: dict = request.response
         if "satisfied" in resp and resp["satisfied"]:
@@ -299,19 +401,24 @@ class ParetoNavigator(InteractiveMethod):
             if 'reference_point' not in resp: # Or other preference
                 raise ParetoNavigatorException("One must specify preference information after starting the method")
 
+
+        max_speed = np.max(self._allowed_speeds)
         if 'speed' in resp:
-            self._current_speed = 5 - resp['speed'] / 5
+            self._current_speed = resp['speed'] / max_speed
         
         if 'step_back' in resp and resp['step_back']:
             self._current_speed *= -1
-        else: self._current_speed = np.abs(self._current_speed)
+        else: # Make sure speed is positive
+            self._current_speed = np.abs(self._current_speed) 
         
-        if 'new_direction' in resp and resp['new_direction']:
-            if 'reference_point' not in resp: 
-                raise ParetoNavigatorException("New direction needs preference information")
+        if resp['new_direction']:
+            if resp['preference_method'] == 1:
+                self._reference_point = resp['reference_point']
+            else:
+                ref_point = self.classification_to_ref_point(resp["classification"])
+                self._reference_point = ref_point
 
-            self._reference_point = resp['reference_point']
-            self._direction = self.calculate_direction(self._current_solution, self._reference_point)
+        self._direction = self.calculate_direction(self._current_solution, self._reference_point)
     
         # Get the new solution by solving the linear parametric problem
         self._current_solution = self.solve_linear_parametric_problem(
@@ -327,7 +434,18 @@ class ParetoNavigator(InteractiveMethod):
     def calculate_weights(self, ideal: np.ndarray, nadir: np.ndarray):
         return 1 / (nadir - ideal)
 
+    # HELP
     def polyhedral_set_eq(self, po_solutions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Construct a polyhedral set as convex hull satisfying Az < b 
+        from the set of pareto optimal solutions
+
+        Args:
+            po_solutions (np.ndarray): Some pareto optimal solutions
+
+        Returns:
+            (np.ndarray, np.ndarray): Matrix A and vector b from the convex hull equation Az < b
+        """
         convex_hull = ConvexHull(po_solutions)
         A = convex_hull.equations[:,0:-1]
         b = convex_hull.equations[:,-1]
@@ -353,9 +471,25 @@ class ParetoNavigator(InteractiveMethod):
     def calculate_direction(self, current_solution: np.ndarray, ref_point: np.ndarray):
         return ref_point - current_solution
     
-    def classification_to_ref_point(self):
-        pass # TODO, most likely done in nimbus
+    def classification_to_ref_point(self, classifications):
+        """
+        Transform a classification to a reference point
+
+        Args:
+            classifications (np.ndarray): Classification for each objective
+
+        Returns:
+            np.ndarray: A reference point which is constructed from the classifications
+        """
+        def mapper(c: str, i: int):
+            if c == "<": return self._ideal[i]
+            elif c == ">": return self._nadir[i]
+            else: return self._current_solution[i] #  c == "=". Request handles invalid classifications
+        k = len(classifications)
+        ref_point = [mapper(c, i) for i, c in (list(enumerate(classifications)))]
+        return np.array(ref_point)
     
+    # HELP
     def solve_linear_parametric_problem(
         self,
         current_sol: np.ndarray, # z^c
@@ -384,6 +518,7 @@ class ParetoNavigator(InteractiveMethod):
             return sol["x"][1:] 
             #raise ParetoNavigatorException("Couldn't calculate new solution")
         
+    # HELP
     def solve_asf(self, ref_point, nadir, ideal):
         pass
         # TODO
@@ -457,6 +592,7 @@ if __name__ == "__main__":
 
     request.response = {
         'preferred_solution': 3,
+        'speed': 2,
     }
 
     request = method.iterate(request)
@@ -464,7 +600,10 @@ if __name__ == "__main__":
 
     request.response = {
         'reference_point': np.array([ideal[0], ideal[1], nadir[2]]),
+        'speed': 3,
         'new_direction': True,
+        'preference_method': 2,
+        'classification': ['<', '=', '>']
     }
 
     for i in range(15):
@@ -473,13 +612,16 @@ if __name__ == "__main__":
 
         request.response = {
             'satisfied': False,
+            'speed': 3,
         }
     
     cur_sol = request.content["current_solution"]
 
     request.response = {
+        'preference_method': 1,
         'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
         'new_direction': True,
+        'speed': 5,
         'satisfied': False,
     }
 
@@ -489,11 +631,14 @@ if __name__ == "__main__":
 
         request.response = {
             'satisfied': False,
+            'speed': 3,
         }
     
     request.response = {
+        'preference_method': 1,
         'reference_point': np.array([-0.32, 2.33, -27.85]),
         'new_direction': True,
+        'speed': 3,
         'satisfied': False,
     }
     
@@ -503,6 +648,7 @@ if __name__ == "__main__":
 
         request.response = {
             'satisfied': False,
+            'speed': 3,
         }
 
     request.response = {
