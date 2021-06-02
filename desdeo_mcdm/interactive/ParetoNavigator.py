@@ -1,6 +1,7 @@
+from desdeo_problem import Constraint
 from desdeo_mcdm.interactive.Nautilus import NautilusException
 from desdeo_problem.Problem import MOProblem
-from desdeo_tools.scalarization.ASF import PointMethodASF, ReferencePointASF
+from desdeo_tools.scalarization.ASF import PointMethodASF, ReferencePointASF, SimpleASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
 from desdeo_mcdm.interactive.ReferencePointMethod import validate_reference_point
@@ -16,15 +17,15 @@ from scipy.optimize import linprog, differential_evolution
 #TODO
 # Scipy linprog failing :/
 # Request validations
-# Initial preference as ref point
-# Classification to ref point
-# final solution projection to actual po set
-# constraints
 # Discrete case
 # Plot requests
 # A lot of checking and validation
-# scalar method in init
 # Remove new direction from request
+# Remove pref_method from request
+
+# Questions
+# adaptive approximation method
+# Assuming in requests
 class ParetoNavigatorException(Exception):
     """Raised when an exception related to Pareto Navigator is encountered.
     """
@@ -159,8 +160,8 @@ class ParetoNavigatorRequest(BaseRequest):
         max_speed = np.max(self._allowed_speeds)
 
         msg = ( # TODO more understandable 
-            "If you are satisfied with the current solution, please state: "
-            "'satisfied' as 'True'. "
+            "If you are satisfied with the current solution, please state:"
+            "'satisfied' as 'True'."
             "If you wish to change the direction, please state:"
             "'new_direction' as 'True' AND"
             "specify a 'preference_method' as either"
@@ -171,7 +172,7 @@ class ParetoNavigatorRequest(BaseRequest):
             "If you wish to step back specify 'step_back' as 'True'"
             "If you wish to change the speed, please specify speed"
             "as 'speed' to be an integer value between"
-            f"{min_speed} and {max_speed} "
+            f"{min_speed} and {max_speed}"
             f"where {min_speed} is the slowest speed and {max_speed} the fastest."
 
         )
@@ -247,7 +248,7 @@ class ParetoNavigatorRequest(BaseRequest):
                         raise ParetoNavigatorException(msg)
                     else: # Validate classifications
                         classifications = np.unique(response['classification'])
-                        if not np.array_equal(np.sort(self._valid_classifications), classifications):
+                        if not np.all(np.isin(classifications, self._valid_classifications)):
                             msg = "Invalid classifications"
                             raise ParetoNavigatorException(msg)
                 else: # Not 1 or 2
@@ -302,21 +303,18 @@ class ParetoNavigator(InteractiveMethod):
         problem: MOProblem,
         pareto_optimal_solutions: np.ndarray, # Initial pareto optimal solutions
         epsilon: float = 1e-6, # No need?
-        # scalar_method: Optional[ScalarMethod] = None
+        scalar_method: Optional[ScalarMethod] = None
     ):
-        if not ideal.shape == nadir.shape:
-            raise ParetoNavigatorException("The dimensions of the ideal and nadir point do not match.")
-        
-        # if scalar_method:
-        #     self._scalar_method = scalar_method
-        # else: 
-        #     self._scalar_method = 
+        if problem.nadir is None or problem.ideal is None:
+            pass # adaptive approximation method -> Az<b, nadir, ideal
+
+        self._scalar_method = scalar_method
 
         self._problem = problem
 
         self._ideal = problem.ideal
         self._nadir = problem.nadir
-        self._utopian = ideal - epsilon # No need?
+        self._utopian = self._ideal - epsilon # No need?
         self._n_objectives = self._ideal.shape[0]
 
         self._weights = self.calculate_weights(self._ideal, self._nadir)
@@ -327,10 +325,10 @@ class ParetoNavigator(InteractiveMethod):
 
         # initialize method with MOProblem
         # TODO discrete
-        self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
-        self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
-        self._variable_vectors = None
-        self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
+        # self._objectives: Callable = lambda x: self._problem.evaluate(x).objectives
+        # self._variable_bounds: Union[np.ndarray, None] = problem.get_variable_bounds()
+        # self._variable_vectors = None
+        # self._constraints: Optional[Callable] = lambda x: self._problem.evaluate(x).constraints
 
         self._allowed_speeds = [1, 2, 3, 4, 5]
 
@@ -343,6 +341,12 @@ class ParetoNavigator(InteractiveMethod):
         self._direction = None
     
     def start(self):
+        """
+        Start the solving process
+
+        Returns:
+            ParetoNavigatorInitialRequest: Initial request
+        """
         return ParetoNavigatorInitialRequest.init_with_method(self)
     
     def iterate(
@@ -372,7 +376,7 @@ class ParetoNavigator(InteractiveMethod):
     def handle_initial_request(self, request: ParetoNavigatorInitialRequest) -> ParetoNavigatorRequest:
         if "reference_point" in request.response:
             self._reference_point = request.response["reference_point"]
-            starting_point = self._reference_point # TODO, ref point -> starting point
+            starting_point = self.solve_asf(self._problem, self._reference_point)
         else: # Preferred po solution
             starting_point = self._pareto_optimal_solutions[request.response["preferred_solution"]]
 
@@ -389,12 +393,11 @@ class ParetoNavigator(InteractiveMethod):
         resp: dict = request.response
         if "satisfied" in resp and resp["satisfied"]:
             final_solution = self.solve_asf(
+                self._problem,
                 self._current_solution,
-                self._nadir,
-                self._ideal,
             )
-            print("Stopping")
-            return ParetoNavigatorStopRequest(final_solution)
+            objectives = self._problem.evaluate(final_solution).objectives.squeeze()
+            return ParetoNavigatorStopRequest(final_solution, objectives)
 
         # First iteration after initial, make sure preference is given
         if self._direction is None and ('new_direction' not in resp or not resp['new_direction']):
@@ -516,15 +519,44 @@ class ParetoNavigator(InteractiveMethod):
         else:
             print("failed")
             return sol["x"][1:] 
-            #raise ParetoNavigatorException("Couldn't calculate new solution")
+            # raise ParetoNavigatorException("Couldn't calculate new solution")
+
+    def solve_asf(self, problem: MOProblem, ref_point: np.ndarray):
+        """
+        Solve achievement scalarizing function
+
+        Args:
+            problem (MOProblem): The problem 
+            ref_point: A reference point
         
-    # HELP
-    def solve_asf(self, ref_point, nadir, ideal):
-        pass
-        # TODO
+        Returns: 
+            np.ndarray: The decision vector which solves the achievement scalarizing function
+        """
+        asf = SimpleASF(np.ones(ref_point.shape))     
+        scalarizer = Scalarizer(
+            lambda x: problem.evaluate(x).objectives,
+            asf,
+            scalarizer_args={"reference_point": np.atleast_2d(ref_point)}
+        )   
 
+        if problem.n_of_constraints > 0:
+            _con_eval = lambda x: problem.evaluate(x).constraints.squeeze()
+        else:
+            _con_eval = None
+        
+        solver = ScalarMinimizer(
+            scalarizer, problem.get_variable_bounds(), constraint_evaluator=_con_eval, method=self._scalar_method,
+        )
 
+        res = solver.minimize(problem.get_variable_upper_bounds() / 2)
 
+        if res["success"]:
+            return res["x"]
+        
+        else:
+            raise ParetoNavigatorException("Could solve achievement scalarazing function")
+
+# Testing
 if __name__ == "__main__":
     from desdeo_problem.Objective import _ScalarObjective
     from desdeo_problem import variable_builder
@@ -554,24 +586,45 @@ if __name__ == "__main__":
     obj1 = _ScalarObjective("obj1", f1)
     obj2 = _ScalarObjective("obj2", f2)
     obj3 = _ScalarObjective("obj3", f3)
+    objectives = [obj1, obj2, obj3]
+    objectives_n = len(objectives)
 
     # TODO other constraints
 
     # variables
     var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
+    variables_n = len(var_names)
 
-    initial_values = np.array([0.5, 0.5])
+    initial_values = np.array([2, 3])
     lower_bounds = [0, 0]
     upper_bounds = [4, 6]
     bounds = np.stack((lower_bounds, upper_bounds))
     variables = variable_builder(var_names, initial_values, lower_bounds, upper_bounds)
 
+    # Constraints
+    def c1(xs, ys):
+        xs = np.atleast_2d(xs)
+        return np.negative((3 * xs[:,0] + xs[:,1] - 12))
+    
+    def c2(xs, ys):
+        xs = np.atleast_2d(xs)
+        return np.negative((2 * xs[:,0] + xs[:,1] -9))
+
+    def c3(xs, ys):
+        xs = np.atleast_2d(xs)
+        return np.negative((xs[:,0] + 2 * xs[:,1] - 12))
+    
+    con1 = Constraint.ScalarConstraint("c1", variables_n, objectives_n, c1)
+    con2 = Constraint.ScalarConstraint("c2", variables_n, objectives_n, c2)
+    con3 = Constraint.ScalarConstraint("c3", variables_n, objectives_n, c3)
+    constraints = [con1, con2, con3]
+
     # problem
-    problem = MOProblem(objectives=[obj1, obj2, obj3], variables=variables)  # objectives "seperately"
+    problem = MOProblem(objectives=objectives, variables=variables, constraints=constraints)  # objectives "seperately"
 
 
     from desdeo_mcdm.utilities.solvers import payoff_table_method
-    ideal, nadir = payoff_table_method(problem)
+    ideal, nadir = np.array([[-2, -3.1, -55], [5.0, 4.6, -14.25]]) # payoff_table_method(problem)
     problem.ideal = ideal
     problem.nadir = nadir
 
@@ -585,25 +638,26 @@ if __name__ == "__main__":
         [5.00, 2.20, -55.00],
     ])
 
-    method = ParetoNavigator(problem, po_sols, ideal, nadir)
+    method = ParetoNavigator(problem, po_sols)
     
     request = method.start()
-    print(request.content)
+    print(request.content['message'])
 
     request.response = {
         'preferred_solution': 3,
-        'speed': 2,
+        'speed': 1,
     }
 
     request = method.iterate(request)
-    print(request.content)
+    print(request.content['message'])
+    print(request.content['current_solution'])
 
     request.response = {
-        'reference_point': np.array([ideal[0], ideal[1], nadir[2]]),
+        # 'reference_point': np.array([ideal[0], ideal[1], nadir[2]]),
         'speed': 3,
         'new_direction': True,
         'preference_method': 2,
-        'classification': ['<', '=', '>']
+        'classification': ['<', '<', '>']
     }
 
     for i in range(15):
@@ -618,8 +672,9 @@ if __name__ == "__main__":
     cur_sol = request.content["current_solution"]
 
     request.response = {
-        'preference_method': 1,
-        'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
+        'preference_method': 2,
+        'classification': ['<', '>', '='],
+        # 'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
         'new_direction': True,
         'speed': 5,
         'satisfied': False,
@@ -635,14 +690,14 @@ if __name__ == "__main__":
         }
     
     request.response = {
-        'preference_method': 1,
-        'reference_point': np.array([-0.32, 2.33, -27.85]),
+        'preference_method': 2,
+        'classification': ['>', '<', '<'],
         'new_direction': True,
         'speed': 3,
         'satisfied': False,
     }
     
-    for i in range(10):
+    for i in range(3):
         request = method.iterate(request)
         print(request.content["current_solution"])
 
@@ -656,4 +711,6 @@ if __name__ == "__main__":
     }
 
     request = method.iterate(request)
-    print(request.content["final_solution"])
+    sol = request.content["final_solution"]
+    print(sol)
+    print(request.content["objective_values"])
