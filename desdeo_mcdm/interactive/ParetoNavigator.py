@@ -1,34 +1,26 @@
 from desdeo_problem import Constraint
-from desdeo_mcdm.interactive.Nautilus import NautilusException
 from desdeo_problem.Problem import MOProblem
-from desdeo_tools.scalarization.ASF import PointMethodASF, ReferencePointASF, SimpleASF
+from desdeo_tools.scalarization.ASF import SimpleASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
 from desdeo_mcdm.interactive.ReferencePointMethod import validate_reference_point
 from typing import Callable, Dict, List, Optional, Tuple, Union
-import numpy as np
-import pandas as pd
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
 from scipy.spatial import ConvexHull
+import numpy as np
+import pandas as pd
+from scipy.optimize import linprog
 
-from scipy.optimize import linprog, differential_evolution
-
-#TODO
-# Scipy linprog failing :/
+# TODO
 # Request validations
 # Discrete case
 # Plot requests
 # A lot of checking and validation
-# Remove new direction from request
-# Remove pref_method from request
+# Ideal and nadir
 
-# Questions
-# adaptive approximation method
-# Assuming in requests
 class ParetoNavigatorException(Exception):
-    """Raised when an exception related to Pareto Navigator is encountered.
-    """
+    """Raised when an exception related to Pareto Navigator is encountered."""
 
     pass
 
@@ -41,19 +33,25 @@ class ParetoNavigatorInitialRequest(BaseRequest):
     point for the navigation phase.
     """
 
-    def __init__(self, ideal: np.ndarray, nadir: np.ndarray, allowed_speeds: np.ndarray) -> None:
+    def __init__(
+        self,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
+        allowed_speeds: np.ndarray,
+        po_solutions: np.ndarray,
+    ) -> None:
         """
-        Initialize with ideal and nadir vectors.
-
         Args:
             ideal (np.ndarray): Ideal vector
             nadir (np.ndarray): Nadir vector
             allowed_speeds (np.ndarray): Allowed movement speeds
+            po_solutions: (np.ndarray): A small set of pareto optimal solutions
         """
 
         self._ideal = ideal
         self._nadir = nadir
         self._allowed_speeds = allowed_speeds
+        self._po_solutions = po_solutions
 
         min_speed = np.min(self._allowed_speeds)
         max_speed = np.max(self._allowed_speeds)
@@ -66,25 +64,31 @@ class ParetoNavigatorInitialRequest(BaseRequest):
 
         content = {
             "message": msg,
+            "po_solutions": po_solutions,
+            "allowed_speeds": allowed_speeds,
             "ideal": ideal,
             "nadir": nadir,
         }
 
-        # Could also be a ref point
         super().__init__("preferred_solution_preference", "required", content=content)
 
     @classmethod
     def init_with_method(cls, method: InteractiveMethod):
         """
-        Initialize request with given instance of ReferencePointMethod.
+        Initialize request with given instance of ParetoNavigator.
 
         Args:
-            method (ReferencePointMethod): Instance of ReferencePointMethod-class.
+            method (ParetoNavigator): Instance of ReferencePointMethod-class.
         Returns:
-            RPMInitialRequest: Initial request.
+            ParetoNavigatorInitialRequest: Initial request.
         """
 
-        return cls(method._ideal, method._nadir, method._allowed_speeds)
+        return cls(
+            method._ideal,
+            method._nadir,
+            method._allowed_speeds,
+            method._pareto_optimal_solutions,
+        )
 
     @BaseRequest.response.setter
     def response(self, response: Dict) -> None:
@@ -95,12 +99,18 @@ class ParetoNavigatorInitialRequest(BaseRequest):
             response (Dict): The Decision Maker's response.
 
         Raises:
-            ParetoNavigatorException: In case reference point 
+            ParetoNavigatorException: In case reference point
             or preferred solution is missing.
         """
 
+        if "reference_point" in response and "preferred_solution" in response:
+            msg = "Please specify only one preference method"
+            raise ParetoNavigatorException(msg)
+
         if "reference_point" in response:
-            validate_reference_point(response["reference_point"], self._ideal, self._nadir)
+            validate_reference_point(
+                response["reference_point"], self._ideal, self._nadir
+            )
         elif "preferred_solution" in response:
             # Validate
             pass
@@ -108,12 +118,13 @@ class ParetoNavigatorInitialRequest(BaseRequest):
             msg = "Please specify either a starting point as 'preferred_solution'."
             "or a reference point as 'reference_point."
             raise ParetoNavigatorException(msg)
-        
-        if 'speed' not in response:
+
+
+        if "speed" not in response:
             msg = "Please specify a speed as 'speed'"
             raise ParetoNavigatorException(msg)
-        
-        speed = response['speed']
+
+        speed = response["speed"]
         try:
             if int(speed) not in self._allowed_speeds:
                 raise ParetoNavigatorException(f"Invalid speed: {speed}.")
@@ -122,19 +133,19 @@ class ParetoNavigatorInitialRequest(BaseRequest):
                 f"An exception rose when validating the given speed {speed}.\n"
                 f"Previous exception: {type(e)}: {str(e)}."
             )
-            
+
         self._response = response
 
 
 class ParetoNavigatorRequest(BaseRequest):
     """
-    A request class to handle the Decision Maker's preferences after the first iteration round.
+    A request class to handle navigation preferences after the first iteration round.
     """
 
     def __init__(
-        self, 
-        current_solution: np.ndarray, 
-        ideal: np.ndarray, 
+        self,
+        current_solution: np.ndarray,
+        ideal: np.ndarray,
         nadir: np.ndarray,
         allowed_speeds: np.ndarray,
         valid_classifications: np.ndarray,
@@ -159,28 +170,27 @@ class ParetoNavigatorRequest(BaseRequest):
         min_speed = np.min(self._allowed_speeds)
         max_speed = np.max(self._allowed_speeds)
 
-        msg = ( # TODO more understandable 
-            "If you are satisfied with the current solution, please state:"
-            "'satisfied' as 'True'."
-            "If you wish to change the direction, please state:"
-            "'new_direction' as 'True' AND"
-            "specify a 'preference_method' as either"
-            "1 = 'reference_point' OR 2 = 'preference_info'"
-            "Depending on your selection on 'preference_method', please specify either"
-            "'reference_point' as a new reference point OR"
-            "classification' as a list of strings"
-            "If you wish to step back specify 'step_back' as 'True'"
-            "If you wish to change the speed, please specify speed"
-            "as 'speed' to be an integer value between"
-            f"{min_speed} and {max_speed}"
+        msg = (  # TODO more understandable
+            "If you wish to see an actual pareto optimal solution based on this approximation "
+            "please state 'show_solution' as 'True'. "
+            "If you wish to change direction. Please specify either a "
+            "new reference point as 'reference_point' or " 
+            "a classification for each objective as 'classification'. "
+            "'classification' should be a list of strings. "
+            "If you wish to step back specify 'step_back' as 'True' "
+            "If you wish to change the speed, please specify a speed "
+            f"as 'speed'. Speed shoulb be an integer value between {min_speed} and {max_speed}, "
             f"where {min_speed} is the slowest speed and {max_speed} the fastest."
-
         )
 
-        content = {"message": msg, "current_solution": current_solution}
+        content = {
+            "message": msg, 
+            "current_solution": current_solution,
+            "valid_classificatons": valid_classifications,
+        }
 
         super().__init__("reference_point_preference", "required", content=content)
-    
+
     @classmethod
     def init_with_method(cls, method: InteractiveMethod):
         """
@@ -212,56 +222,103 @@ class ParetoNavigatorRequest(BaseRequest):
             ParetoNavigatorException: In case response is invalid.
         """
 
-        if 'satisfied' in response and response['satisfied']:
+        if 'show_solution' in response:
             self._response = response
-            return
+            return # No need to validate others
 
-        if 'speed' not in response:
-            raise ParetoNavigatorException("Please specify a speed")
-        speed = response["speed"]
-        try:
-            if int(speed) not in self._allowed_speeds:
-                raise ParetoNavigatorException(f"Invalid speed: {speed}.")
-        except Exception as e:
-            raise ParetoNavigatorException(
-                f"An exception rose when validating the given speed {speed}.\n"
-                f"Previous exception: {type(e)}: {str(e)}."
-            )
-        
-        if 'new_direction' in response and response['new_direction']:
-            if 'preference_method' not in response:
-                msg = "Specify a preference as 'preference_method' method when changing direction"
-                raise ParetoNavigatorException(msg)
-
-            
+        if 'speed' in response:
+            speed = response["speed"]
             try:
-                pref_method = int(response['preference_method'])
-                if pref_method == 1:
-                    if 'reference_point' not in response:
-                        msg = "Specify a reference point when using reference point preference"
-                        raise ParetoNavigatorException(msg)
-                    else: # Validate reference point
-                        validate_reference_point(response['reference_point'], self._ideal, self._nadir)
-                elif pref_method == 2:
-                    if 'classification' not in response:
-                        msg = "Specify classifications when using classification prefence"
-                        raise ParetoNavigatorException(msg)
-                    else: # Validate classifications
-                        classifications = np.unique(response['classification'])
-                        if not np.all(np.isin(classifications, self._valid_classifications)):
-                            msg = "Invalid classifications"
-                            raise ParetoNavigatorException(msg)
-                else: # Not 1 or 2
-                    msg = "Preference method should be an integer value either 1 or 2"
-                    raise ParetoNavigatorException(msg)
-                response['preference_method'] = pref_method # Make sure is integer either 1 or 2
+                if int(speed) not in self._allowed_speeds:
+                    raise ParetoNavigatorException(f"Invalid speed: {speed}.")
             except Exception as e:
-                raise ParetoNavigatorException(f"Previous exception: {type(e)}: {str(e)}.")
-        else: # New direction false or not specified
-            response['new_direction'] = False # Is setting responses fine?
+                raise ParetoNavigatorException(
+                    f"An exception rose when validating the given speed {speed}.\n"
+                    f"Previous exception: {type(e)}: {str(e)}."
+                )
 
+        # TODO
+            # try:
+            #     pref_method = int(response["preference_method"])
+            #     if pref_method == 1:
+            #         if "reference_point" not in response:
+            #             msg = "Specify a reference point when using reference point preference"
+            #             raise ParetoNavigatorException(msg)
+            #         else:  # Validate reference point
+            #             validate_reference_point(
+            #                 response["reference_point"], self._ideal, self._nadir
+            #             )
+            #     elif pref_method == 2:
+            #         if "classification" not in response:
+            #             msg = (
+            #                 "Specify classifications when using classification prefence"
+            #             )
+            #             raise ParetoNavigatorException(msg)
+            #         else:  # Validate classifications
+            #             classifications = np.unique(response["classification"])
+            #             if not np.all(
+            #                 np.isin(classifications, self._valid_classifications)
+            #             ):
+            #                 msg = "Invalid classifications"
+            #                 raise ParetoNavigatorException(msg)
+            #     else:  # Not 1 or 2
+            #         msg = "Preference method should be an integer value either 1 or 2"
+            #         raise ParetoNavigatorException(msg)
+            #     response[
+            #         "preference_method"
+            #     ] = pref_method  # Make sure is integer either 1 or 2
+            # except Exception as e:
+            #     raise ParetoNavigatorException(
+            #         f"Previous exception: {type(e)}: {str(e)}."
+            #     )
 
         self._response = response
+    
+
+class ParetoNavigatorSolutionRequest(BaseRequest):
+    """
+    A request class to handle ...
+    """
+    def __init__(self,         
+        approx_solution: np.ndarray,
+        pareto_optimal_solution: np.ndarray,
+        objective_values: np.ndarray
+    ):
+        """
+        Args:
+            approx_solution (np.ndarray): The approximated solution received by navigation
+            pareto_optimal_solution (np.ndarray): A pareto optimal solution (decision variables).
+            objective_values (np.ndarray): Objective vector.
+        """
+        msg = (
+            "If you are satisfied with this pareto optimal solution "
+            "please state 'satisfied' as 'True'. This will end the navigation. "
+            "Otherwise state 'satisfied' as 'False and the navigation will "
+            "be continued with this pareto optimal solution added to the approximation."          
+        )
+
+        content = {
+            "message": msg,
+            "approximate_solution": approx_solution,
+            "pareto_optimal_solution": pareto_optimal_solution,
+            "objective_values": objective_values,
+        }
+
+        super().__init__("preferred_solution_preference", "required", content=content)
+
+
+    @BaseRequest.response.setter
+    def response(self, response: Dict) -> None:
+        """
+        Set the Decision Maker's response information for request.
+
+        Args:
+            response (Dict): The Decision Maker's response.
+        """
+        self._response = response
+
+
+
 
 
 class ParetoNavigatorStopRequest(BaseRequest):
@@ -269,11 +326,18 @@ class ParetoNavigatorStopRequest(BaseRequest):
     A request class to handle termination.
     """
 
-    def __init__(self, final_solution: np.ndarray, objective_values: np.ndarray = None) -> None:
+    def __init__(
+        self,
+        approx_solution: np.ndarray,
+        final_solution: np.ndarray,
+        objective_values: np.ndarray,
+    ) -> None:
         """
-        Initialize termination request with final solution and objective vector.
+        Initialize termination request with approximate solution, 
+        final solution and corresponding objective vector.
 
         Args:
+            approx_solution (np.ndarray): The approximated solution received by navigation
             final_solution (np.ndarray): Solution (decision variables).
             objective_values (np.ndarray): Objective vector.
         """
@@ -281,8 +345,9 @@ class ParetoNavigatorStopRequest(BaseRequest):
 
         content = {
             "message": msg,
+            "approximate_solution": approx_solution,
             "final_solution": final_solution,
-            "objective_values": objective_values
+            "objective_values": objective_values,
         }
 
         super().__init__("print", "no_interaction", content=content)
@@ -292,21 +357,22 @@ class ParetoNavigator(InteractiveMethod):
     """
     Paretonavigator as described in 'Pareto navigator for interactive nonlinear
     multiobjective optimization' (2008) [Petri Eskelinen · Kaisa Miettinen ·
-    Kathrin Klamroth · Jussi Hakanen]. 
+    Kathrin Klamroth · Jussi Hakanen].
 
     Args:
         problem (MOProblem): The problem to be solved.
         pareto_optimal_solutions (np.ndarray): Some pareto optimal solutions to construct the polyhedral set
     """
+
     def __init__(
         self,
         problem: MOProblem,
-        pareto_optimal_solutions: np.ndarray, # Initial pareto optimal solutions
-        epsilon: float = 1e-6, # No need?
-        scalar_method: Optional[ScalarMethod] = None
+        pareto_optimal_solutions: np.ndarray,  # Initial pareto optimal solutions
+        epsilon: float = 1e-6,  # No need?
+        scalar_method: Optional[ScalarMethod] = None,
     ):
         if problem.nadir is None or problem.ideal is None:
-            pass # adaptive approximation method -> Az<b, nadir, ideal
+            pass  # adaptive approximation method -> Az<b, nadir, ideal
 
         self._scalar_method = scalar_method
 
@@ -314,12 +380,16 @@ class ParetoNavigator(InteractiveMethod):
 
         self._ideal = problem.ideal
         self._nadir = problem.nadir
-        self._utopian = self._ideal - epsilon # No need?
+        self._utopian = self._ideal - epsilon  # No need?
         self._n_objectives = self._ideal.shape[0]
 
+
+        A, self.b = self.polyhedral_set_eq(pareto_optimal_solutions) # Get ideal and nadir from here?
         self._weights = self.calculate_weights(self._ideal, self._nadir)
-        A, self.b =  self.polyhedral_set_eq(pareto_optimal_solutions)
-        self.lppp_A= self.construct_lppp_A(self._weights, A) # Used in (3), Doesn't change
+
+        self.lppp_A = self.construct_lppp_A(
+            self._weights, A
+        )  # Used in (3). Only changes if new solutions added
 
         self._pareto_optimal_solutions = pareto_optimal_solutions
 
@@ -332,14 +402,14 @@ class ParetoNavigator(InteractiveMethod):
 
         self._allowed_speeds = [1, 2, 3, 4, 5]
 
-        # Improve, degrade, maintain, 
+        # Improve, degrade, maintain,
         self._valid_classifications = ["<", ">", "="]
 
         self._current_speed = None
         self._reference_point = None
         self._current_solution = None
         self._direction = None
-    
+
     def start(self):
         """
         Start the solving process
@@ -348,99 +418,162 @@ class ParetoNavigator(InteractiveMethod):
             ParetoNavigatorInitialRequest: Initial request
         """
         return ParetoNavigatorInitialRequest.init_with_method(self)
-    
+
     def iterate(
-        self, 
-        request: Union[ParetoNavigatorInitialRequest, ParetoNavigatorRequest, ParetoNavigatorStopRequest]
-    ) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
+        self,
+        request: Union[
+            ParetoNavigatorInitialRequest,
+            ParetoNavigatorRequest,
+            ParetoNavigatorSolutionRequest,
+            ParetoNavigatorStopRequest,
+        ],
+    ) -> Union[ParetoNavigatorRequest, ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest]:
         """
         Perform the next logical iteration step based on the given request type.
 
         Args:
-            request (Union[ParetoNavigatorInitialRequest, ParetoNavigatorRequest,ParetoNavigatorStopRequest]):
+            request (Union[ParetoNavigatorInitialRequest, ParetoNavigatorRequest, 
+            ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest]):
             A ParetoNavigatorRequest
 
         Returns:
-            Union[RPMRequest, RPMStopRequest]: A new request with content depending on the Decision Maker's
-            preferences.
+            Union[ParetoNavigatorRequest, ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest]:
+            A new request with content depending on the Decision Maker's preferences.
         """
-        
+
         if type(request) is ParetoNavigatorInitialRequest:
             return self.handle_initial_request(request)
         elif type(request) is ParetoNavigatorRequest:
             return self.handle_request(request)
+        elif type(request) is ParetoNavigatorSolutionRequest:
+            return self.handle_solution_request(request)
         else:
             # if stop request, do nothing
             return request
 
-    def handle_initial_request(self, request: ParetoNavigatorInitialRequest) -> ParetoNavigatorRequest:
+    def handle_initial_request(
+        self, request: ParetoNavigatorInitialRequest
+    ) -> ParetoNavigatorRequest:
         if "reference_point" in request.response:
             self._reference_point = request.response["reference_point"]
             starting_point = self.solve_asf(self._problem, self._reference_point)
-        else: # Preferred po solution
-            starting_point = self._pareto_optimal_solutions[request.response["preferred_solution"]]
+        else:  # Preferred po solution
+            starting_point = self._pareto_optimal_solutions[
+                request.response["preferred_solution"]
+            ]
 
         self._current_solution = starting_point
-        self._current_speed = request.response['speed']
+        self._current_speed = request.response["speed"]
 
         return ParetoNavigatorRequest.init_with_method(self)
 
     def handle_request(
-        self,
-        request: ParetoNavigatorRequest
+        self, request: ParetoNavigatorRequest
     ) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
-        
+
         resp: dict = request.response
-        if "satisfied" in resp and resp["satisfied"]:
-            final_solution = self.solve_asf(
+        if resp is None:
+            resp = {}
+
+        if "show_solution" in resp and resp["show_solution"]:
+            self._po_solution = self.solve_asf(
                 self._problem,
                 self._current_solution,
             )
-            objectives = self._problem.evaluate(final_solution).objectives.squeeze()
-            return ParetoNavigatorStopRequest(final_solution, objectives)
+            self._po_objectives = self._problem.evaluate(self._po_solution).objectives.squeeze()
+            return ParetoNavigatorSolutionRequest(
+                self._current_solution, self._po_solution, self._po_objectives
+            )
 
-        # First iteration after initial, make sure preference is given
-        if self._direction is None and ('new_direction' not in resp or not resp['new_direction']):
-            if 'reference_point' not in resp: # Or other preference
-                raise ParetoNavigatorException("One must specify preference information after starting the method")
+        if "speed" in resp:
+            self._current_speed = resp["speed"] / np.max(self._allowed_speeds)
 
-
-        max_speed = np.max(self._allowed_speeds)
-        if 'speed' in resp:
-            self._current_speed = resp['speed'] / max_speed
-        
-        if 'step_back' in resp and resp['step_back']:
+        if "step_back" in resp and resp["step_back"]: # Check!
             self._current_speed *= -1
-        else: # Make sure speed is positive
-            self._current_speed = np.abs(self._current_speed) 
-        
-        if resp['new_direction']:
-            if resp['preference_method'] == 1:
-                self._reference_point = resp['reference_point']
-            else:
-                ref_point = self.classification_to_ref_point(resp["classification"])
-                self._reference_point = ref_point
+        else:  # Make sure speed is positive
+            self._current_speed = np.abs(self._current_speed)
 
-        self._direction = self.calculate_direction(self._current_solution, self._reference_point)
-    
+        if "reference_point" in resp:
+            self._reference_point = resp["reference_point"]
+        elif "classification" in resp:
+            ref_point = self.classification_to_ref_point(
+                resp["classification"],
+                self._ideal,
+                self._nadir,
+                self._current_solution,
+            )
+            self._reference_point = ref_point
+
+        self._direction = self.calculate_direction(
+            self._current_solution, self._reference_point
+        )
+
         # Get the new solution by solving the linear parametric problem
         self._current_solution = self.solve_linear_parametric_problem(
             self._current_solution,
+            self._ideal,
+            self._nadir,
             self._direction,
             self._current_speed,
             self.lppp_A,
-            self.b
+            self.b,
         )
 
         return ParetoNavigatorRequest.init_with_method(self)
+    
+    def handle_solution_request(
+        self, request: ParetoNavigatorSolutionRequest
+    ) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
+        """
+        Handle a solution request response
+
+        Args: 
+            request (ParetoNavigatorSolutionRequest): A solution request
+
+        Returns:
+            Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]
+        """
+        resp = request.response
+        if resp is not None: # Is not satisfied with the solution
+            if "satisfied" in resp and resp["satisfied"]:
+                final_solution = self._po_solution
+                return ParetoNavigatorStopRequest(
+                    self._current_solution, final_solution, self._po_objectives
+                )
+        
+        # No response or not satisfied
+
+        # Add solution to approximation
+        A, self.b = self.polyhedral_set_eq(self._pareto_optimal_solutions + self._po_objectives)
+        # Update ideal and nadir, then also weights... 
+        # self._weights = self.calculate_weights(self._ideal, self._nadir)
+
+        # update lppp A
+        self.lppp_A = self.construct_lppp_A(
+            self._weights, A
+        )
+
+        return ParetoNavigatorRequest.init_with_method(self)
+    
 
     def calculate_weights(self, ideal: np.ndarray, nadir: np.ndarray):
+        """
+        Calculate the scaling coefficients w from ideal and nadir. 
+
+        Args:
+            ideal (np.ndarray): Ideal vector
+            nadir (np.ndarray): Nadir vector
+        
+        Returns:
+            np.ndarray: The scaling coefficients
+        """
         return 1 / (nadir - ideal)
 
-    # HELP
-    def polyhedral_set_eq(self, po_solutions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def polyhedral_set_eq(
+        self, po_solutions: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Construct a polyhedral set as convex hull satisfying Az < b 
+        Construct a polyhedral set as convex hull satisfying Az < b
         from the set of pareto optimal solutions
 
         Args:
@@ -449,20 +582,22 @@ class ParetoNavigator(InteractiveMethod):
         Returns:
             (np.ndarray, np.ndarray): Matrix A and vector b from the convex hull equation Az < b
         """
-        convex_hull = ConvexHull(po_solutions)
-        A = convex_hull.equations[:,0:-1]
-        b = convex_hull.equations[:,-1]
+        convex_hull = ConvexHull(
+            po_solutions
+        )  # facet: Az + b = 0 so inside: Az <= -b
+        A = convex_hull.equations[:, 0:-1]
+        b = -convex_hull.equations[:, -1]
         return A, b
-    
+
     def construct_lppp_A(self, weights, A):
         """
         The matrix A used in the linear parametric programming problem
         """
         k = len(weights)
-        diag = np.zeros((k,k))
+        diag = np.zeros((k, k))
 
         np.fill_diagonal(diag, 1)
-        weights_inv = np.reshape(np.vectorize(lambda w: -1/w)(weights), (k,1))
+        weights_inv = np.reshape(np.vectorize(lambda w: -1 / w)(weights), (k, 1))
         upper_A = np.hstack((weights_inv, diag))
 
         fill_zeros = np.zeros((len(A), 1))
@@ -470,11 +605,13 @@ class ParetoNavigator(InteractiveMethod):
 
         lppp_A = np.concatenate((upper_A, filled_A))
         return lppp_A
-    
+
     def calculate_direction(self, current_solution: np.ndarray, ref_point: np.ndarray):
         return ref_point - current_solution
-    
-    def classification_to_ref_point(self, classifications):
+
+    def classification_to_ref_point(
+        self, classifications, ideal, nadir, current_solution
+    ):
         """
         Transform a classification to a reference point
 
@@ -484,77 +621,100 @@ class ParetoNavigator(InteractiveMethod):
         Returns:
             np.ndarray: A reference point which is constructed from the classifications
         """
+
         def mapper(c: str, i: int):
-            if c == "<": return self._ideal[i]
-            elif c == ">": return self._nadir[i]
-            else: return self._current_solution[i] #  c == "=". Request handles invalid classifications
-        k = len(classifications)
+            if c == "<":
+                return ideal[i]
+            elif c == ">":
+                return nadir[i]
+            elif c == "=":
+                return current_solution[i]
+
         ref_point = [mapper(c, i) for i, c in (list(enumerate(classifications)))]
         return np.array(ref_point)
-    
-    # HELP
+
     def solve_linear_parametric_problem(
         self,
-        current_sol: np.ndarray, # z^c
-        direction: np.ndarray, # d
-        a: float, # alpha
-        A: np.ndarray, # Az < b
+        current_sol: np.ndarray,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
+        direction: np.ndarray,
+        a: float,
+        A: np.ndarray,
         b: np.ndarray,
     ) -> np.ndarray:
         """
-        The linear parametric programming problem  (3)
+        Solves the linear parametric programming problem
+        as defined in (3)
+
+        Args:
+            current_sol (np.ndarray): Current solution
+            ideal (np.ndarray): Ideal vector
+            nadir (np.ndarray): Nadir vector
+            direction (np.ndarray): Navigation direction
+            a (float): Alpha in problem (3)
+            A (np.ndarray): Matrix A from Az <= b
+            b (np.ndarray): Vector b from Az <= b
+        
+        Returns:
+            np.ndarray: Optimal vector from the linear parametric programming problem.
+            This is the new solution to be used in the navigation.
         """
         k = len(current_sol)
-        c = np.array([1] + k*[0])
+        c = np.array([1] + k * [0])
 
-        moved_ref_point = current_sol + (a * direction) # Z^-
-        moved_ref_point = np.reshape(moved_ref_point, ((k,1)))
-        b_new = np.append(moved_ref_point, b) # b'
+        moved_ref_point = current_sol + (a * direction)
+        moved_ref_point = np.reshape(moved_ref_point, ((k, 1)))
+        b_new = np.append(moved_ref_point, b) 
 
-        obj_bounds = np.stack((self._ideal, self._nadir))
-        bounds = [(None, None)] + [(x,y) for x,y in obj_bounds.T] # sequence of pairs
-        sol = linprog(c = c,A_ub = A, b_ub = b_new, bounds=bounds)
+        obj_bounds = np.stack((ideal, nadir))
+        bounds = [(None, None)] + [(x, y) for x, y in obj_bounds.T] 
+        sol = linprog(c=c, A_ub=A, b_ub=b_new, bounds=bounds)
         if sol["success"]:
-            return sol["x"][1:] # zeta in index 0.
+            return sol["x"][1:]  # zeta in index 0.
         else:
-            print("failed")
-            return sol["x"][1:] 
-            # raise ParetoNavigatorException("Couldn't calculate new solution")
+            raise ParetoNavigatorException("Couldn't calculate a new solution")
 
     def solve_asf(self, problem: MOProblem, ref_point: np.ndarray):
         """
-        Solve achievement scalarizing function
+        Solve achievement scalarizing function with simpleasf
 
         Args:
-            problem (MOProblem): The problem 
+            problem (MOProblem): The problem
             ref_point: A reference point
-        
-        Returns: 
+
+        Returns:
             np.ndarray: The decision vector which solves the achievement scalarizing function
         """
-        asf = SimpleASF(np.ones(ref_point.shape))     
+        asf = SimpleASF(np.ones(ref_point.shape))
         scalarizer = Scalarizer(
             lambda x: problem.evaluate(x).objectives,
             asf,
-            scalarizer_args={"reference_point": np.atleast_2d(ref_point)}
-        )   
+            scalarizer_args={"reference_point": np.atleast_2d(ref_point)},
+        )
 
         if problem.n_of_constraints > 0:
             _con_eval = lambda x: problem.evaluate(x).constraints.squeeze()
         else:
             _con_eval = None
-        
+
         solver = ScalarMinimizer(
-            scalarizer, problem.get_variable_bounds(), constraint_evaluator=_con_eval, method=self._scalar_method,
+            scalarizer,
+            problem.get_variable_bounds(),
+            constraint_evaluator=_con_eval,
+            method=self._scalar_method,
         )
 
         res = solver.minimize(problem.get_variable_upper_bounds() / 2)
 
         if res["success"]:
             return res["x"]
-        
+
         else:
-            raise ParetoNavigatorException("Could solve achievement scalarazing function")
+            raise ParetoNavigatorException(
+                "Could solve achievement scalarazing function"
+            )
+
 
 # Testing
 if __name__ == "__main__":
@@ -568,28 +728,23 @@ if __name__ == "__main__":
 
     def f2(xs):
         xs = np.atleast_2d(xs)
-        return (
-            (1/5) *
-            (
-                np.square(xs[:, 0]) -
-                10 * xs[:, 0] +
-                np.square(xs[:, 1]) -
-                4 * xs[:, 1] + 
-                11
-            )
+        return (1 / 5) * (
+            np.square(xs[:, 0])
+            - 10 * xs[:, 0]
+            + np.square(xs[:, 1])
+            - 4 * xs[:, 1]
+            + 11
         )
 
     def f3(xs):
         xs = np.atleast_2d(xs)
-        return (5 - xs[:, 0])*(xs[:, 1] - 11)
+        return (5 - xs[:, 0]) * (xs[:, 1] - 11)
 
     obj1 = _ScalarObjective("obj1", f1)
     obj2 = _ScalarObjective("obj2", f2)
     obj3 = _ScalarObjective("obj3", f3)
     objectives = [obj1, obj2, obj3]
     objectives_n = len(objectives)
-
-    # TODO other constraints
 
     # variables
     var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
@@ -604,113 +759,121 @@ if __name__ == "__main__":
     # Constraints
     def c1(xs, ys):
         xs = np.atleast_2d(xs)
-        return np.negative((3 * xs[:,0] + xs[:,1] - 12))
-    
+        return np.negative((3 * xs[:, 0] + xs[:, 1] - 12))
+
     def c2(xs, ys):
         xs = np.atleast_2d(xs)
-        return np.negative((2 * xs[:,0] + xs[:,1] -9))
+        return np.negative((2 * xs[:, 0] + xs[:, 1] - 9))
 
     def c3(xs, ys):
         xs = np.atleast_2d(xs)
-        return np.negative((xs[:,0] + 2 * xs[:,1] - 12))
-    
+        return np.negative((xs[:, 0] + 2 * xs[:, 1] - 12))
+
     con1 = Constraint.ScalarConstraint("c1", variables_n, objectives_n, c1)
     con2 = Constraint.ScalarConstraint("c2", variables_n, objectives_n, c2)
     con3 = Constraint.ScalarConstraint("c3", variables_n, objectives_n, c3)
     constraints = [con1, con2, con3]
 
     # problem
-    problem = MOProblem(objectives=objectives, variables=variables, constraints=constraints)  # objectives "seperately"
-
+    problem = MOProblem(
+        objectives=objectives, variables=variables, constraints=constraints
+    )  # objectives "seperately"
 
     from desdeo_mcdm.utilities.solvers import payoff_table_method
-    ideal, nadir = np.array([[-2, -3.1, -55], [5.0, 4.6, -14.25]]) # payoff_table_method(problem)
+
+    ideal, nadir = np.array(
+        [[-2, -3.1, -55], [5.0, 4.6, -14.25]]
+    )  # payoff_table_method(problem)
     problem.ideal = ideal
     problem.nadir = nadir
 
-    po_sols = np.array([
-        [-2, 0, -18],
-        [-1, 4.6, -25],
-        [0, -3.1, -14.25],
-        [1.38, 0.62, -35.33],
-        [1.73, 1.72, -38.64],
-        [2.48, 1.45, -42.41],
-        [5.00, 2.20, -55.00],
-    ])
+    po_sols = np.array(
+        [
+            [-2, 0, -18],
+            [-1, 4.6, -25],
+            [0, -3.1, -14.25],
+            [1.38, 0.62, -35.33],
+            [1.73, 1.72, -38.64],
+            [2.48, 1.45, -42.41],
+            [5.00, 2.20, -55.00],
+        ]
+    )
 
     method = ParetoNavigator(problem, po_sols)
-    
+
     request = method.start()
-    print(request.content['message'])
+    print(request.content["message"])
 
     request.response = {
-        'preferred_solution': 3,
-        'speed': 1,
+        "preferred_solution": 0,
+        "speed": 1,
     }
 
     request = method.iterate(request)
-    print(request.content['message'])
-    print(request.content['current_solution'])
+    print(request.content["message"])
+    print(request.content["current_solution"])
 
     request.response = {
         # 'reference_point': np.array([ideal[0], ideal[1], nadir[2]]),
-        'speed': 3,
-        'new_direction': True,
-        'preference_method': 2,
-        'classification': ['<', '<', '>']
+        "speed": 3,
+        "classification": ["<", "<", ">"],
     }
 
     for i in range(15):
         request = method.iterate(request)
         print(request.content["current_solution"])
 
-        request.response = {
-            'satisfied': False,
-            'speed': 3,
-        }
-    
     cur_sol = request.content["current_solution"]
 
     request.response = {
-        'preference_method': 2,
-        'classification': ['<', '>', '='],
-        # 'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
-        'new_direction': True,
-        'speed': 5,
-        'satisfied': False,
+        "classification": ["<", "<", ">"],
+        #'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
+        "new_direction": True,
+        "speed": 5,
     }
 
     for i in range(15):
         request = method.iterate(request)
         print(request.content["current_solution"])
 
-        request.response = {
-            'satisfied': False,
-            'speed': 3,
-        }
-    
     request.response = {
-        'preference_method': 2,
-        'classification': ['>', '<', '<'],
-        'new_direction': True,
-        'speed': 3,
-        'satisfied': False,
+        "classification": ["<", "<", ">"],
+        "speed": 2,
     }
-    
+
     for i in range(3):
         request = method.iterate(request)
         print(request.content["current_solution"])
 
-        request.response = {
-            'satisfied': False,
-            'speed': 3,
-        }
-
     request.response = {
-        'satisfied': True,
+        "show_solution": True,
     }
 
     request = method.iterate(request)
-    sol = request.content["final_solution"]
-    print(sol)
+    print(request.content["message"])
+    
+    request = method.iterate(request) # Not satisfied
+
+    print(request.content["message"])
+
+    request.response = {
+        "classification": ["<", "<", ">"],
+        "speed": 5,
+    }
+
+    for i in range(5):
+        request = method.iterate(request)
+    
+    request.response = {
+        "show_solution": True,
+    }
+
+    request = method.iterate(request)
+    request.response = {
+        "satisfied": True
+    }
+    request = method.iterate(request)
+
+    print(request.content["message"])
+    print(request.content["final_solution"])
     print(request.content["objective_values"])
