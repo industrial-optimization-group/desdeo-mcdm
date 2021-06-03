@@ -17,6 +17,7 @@ from scipy.optimize import linprog
 # Request validations
 # If maximizing then ideal > nadir -> scipy linalg fails
 #   Propably because bounds will be flipped then
+# Something seems to go wrong when reconstructing lppp variables
 
 
 # Maybe DONE
@@ -444,7 +445,7 @@ class ParetoNavigator(InteractiveMethod):
             ]
 
         self._current_solution = starting_point
-        self._current_speed = request.response["speed"]
+        self._current_speed = request.response["speed"]/np.max(self._allowed_speeds)
 
         msg = "Current solution"
         plot_request = self.create_plot_request(np.atleast_2d(self._current_solution), msg)
@@ -535,7 +536,8 @@ class ParetoNavigator(InteractiveMethod):
         # No response or not satisfied
 
         # Add solution to approximation
-        A, self.b = self.polyhedral_set_eq(self._pareto_optimal_solutions + self._po_objectives)
+        self._pareto_optimal_solutions = np.vstack((self._pareto_optimal_solutions, self._po_objectives))
+        A, self.b = self.polyhedral_set_eq(self._pareto_optimal_solutions)
         # Update ideal and nadir, then also weights... 
         # self._weights = self.calculate_weights(self._ideal, self._nadir)
 
@@ -837,8 +839,8 @@ if __name__ == "__main__":
     print(request.content["message"])
 
     request.response = {
-        "preferred_solution": 0,
-        "speed": 1,
+        "preferred_solution": 3,
+        "speed": 2,
     }
 
     request, plot_req = method.iterate(request)
@@ -847,35 +849,38 @@ if __name__ == "__main__":
 
     request.response = {
         # 'reference_point': np.array([ideal[0], ideal[1], nadir[2]]),
-        "speed": 3,
         "classification": ["<", "<", ">"],
     }
 
-    for i in range(15):
+    for i in range(50):
         request, plot_req = method.iterate(request)
-        print(request.content["current_solution"])
-
-    cur_sol = request.content["current_solution"]
+        cur_sol = request.content["current_solution"]
+        print(cur_sol)
+        if np.all(np.abs(cur_sol - np.array([0.35, -0.51, -26.26])) < 0.3):
+            break
 
     request.response = {
-        "classification": ["<", "<", ">"],
+        "classification": ["<", ">", "="],
         #'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
-        "new_direction": True,
-        "speed": 5,
     }
 
-    for i in range(15):
+    for i in range(50):
         request, plot_req = method.iterate(request)
-        print(request.content["current_solution"])
+        cur_sol = request.content["current_solution"]
+        print(cur_sol)
+        if np.all(np.abs(cur_sol - np.array([-0.64, 1.82, -25.95])) < 0.3):
+            break
 
     request.response = {
-        "classification": ["<", "<", ">"],
-        "speed": 2,
+        "classification": [">", "<", "<"],
     }
 
-    for i in range(3):
+    for i in range(50):
         request, plot_req = method.iterate(request)
-        print(request.content["current_solution"])
+        cur_sol = request.content["current_solution"]
+        print(cur_sol)
+        if np.all(np.abs(cur_sol - np.array([-0.32, 2.33, -27.85])) < 0.3):
+            break
 
     request.response = {
         "show_solution": True,
@@ -883,18 +888,21 @@ if __name__ == "__main__":
 
     request, plot_req = method.iterate(request)
     print(request.content["message"])
+    print(request.content['objective_values'])
     
     request, plot_req = method.iterate(request) # Not satisfied
 
     print(request.content["message"])
 
     request.response = {
-        "classification": ["<", "<", ">"],
-        "speed": 5,
+        "classification": ["<", ">", ">"],
+        "speed": 1,
     }
 
-    for i in range(5):
+    for i in range(4):
         request, plot_req = method.iterate(request)
+        cur_sol = request.content["current_solution"]
+        print(cur_sol)
     
     request.response = {
         "show_solution": True,
