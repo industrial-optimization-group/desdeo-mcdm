@@ -2,7 +2,11 @@ from desdeo_problem import Constraint
 from desdeo_problem.Problem import MOProblem, DiscreteDataProblem
 from desdeo_tools.scalarization.ASF import SimpleASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer, DiscreteScalarizer
-from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer, DiscreteMinimizer
+from desdeo_tools.solver.ScalarSolver import (
+    ScalarMethod,
+    ScalarMinimizer,
+    DiscreteMinimizer,
+)
 from scipy.optimize.zeros import toms748
 from desdeo_mcdm.interactive.ReferencePointMethod import validate_reference_point
 from typing import Callable, Dict, List, Optional, Tuple, Union
@@ -14,15 +18,14 @@ import pandas as pd
 from scipy.optimize import linprog
 
 # TODO
-# Request validations
 # If maximizing then ideal > nadir -> scipy linalg fails
 #   Propably because bounds will be flipped then
-# Something seems to go wrong when reconstructing lppp variables
 
 
 # Maybe DONE
 # Discrete case
-# Plot requests 
+# Plot requests
+
 
 class ParetoNavigatorException(Exception):
     """Raised when an exception related to Pareto Navigator is encountered."""
@@ -44,7 +47,7 @@ class ParetoNavigatorInitialRequest(BaseRequest):
         nadir: np.ndarray,
         allowed_speeds: np.ndarray,
         po_solutions: np.ndarray,
-    ) -> None:
+    ):
         """
         Args:
             ideal (np.ndarray): Ideal vector
@@ -69,7 +72,7 @@ class ParetoNavigatorInitialRequest(BaseRequest):
 
         content = {
             "message": msg,
-            "po_solutions": po_solutions,
+            "pareto_optimal_solutions": po_solutions,
             "allowed_speeds": allowed_speeds,
             "ideal": ideal,
             "nadir": nadir,
@@ -124,7 +127,6 @@ class ParetoNavigatorInitialRequest(BaseRequest):
             "or a reference point as 'reference_point."
             raise ParetoNavigatorException(msg)
 
-
         if "speed" not in response:
             msg = "Please specify a speed as 'speed'"
             raise ParetoNavigatorException(msg)
@@ -154,7 +156,7 @@ class ParetoNavigatorRequest(BaseRequest):
         nadir: np.ndarray,
         allowed_speeds: np.ndarray,
         valid_classifications: np.ndarray,
-    ) -> None:
+    ):
         """
         Initialize request with current iterations's solution process information.
 
@@ -179,7 +181,7 @@ class ParetoNavigatorRequest(BaseRequest):
             "If you wish to see an actual pareto optimal solution based on this approximation "
             "please state 'show_solution' as 'True'. "
             "If you wish to change direction. Please specify either a "
-            "new reference point as 'reference_point' or " 
+            "new reference point as 'reference_point' or "
             "a classification for each objective as 'classification'. "
             "'classification' should be a list of strings. "
             "If you wish to step back specify 'step_back' as 'True' "
@@ -189,7 +191,7 @@ class ParetoNavigatorRequest(BaseRequest):
         )
 
         content = {
-            "message": msg, 
+            "message": msg,
             "current_solution": current_solution,
             "valid_classificatons": valid_classifications,
         }
@@ -227,11 +229,11 @@ class ParetoNavigatorRequest(BaseRequest):
             ParetoNavigatorException: In case response is invalid.
         """
 
-        if 'show_solution' in response and response['show_solution']:
+        if "show_solution" in response and response["show_solution"]:
             self._response = response
-            return # No need to validate others
+            return  # No need to validate others
 
-        if 'speed' in response:
+        if "speed" in response:
             speed = response["speed"]
             try:
                 if int(speed) not in self._allowed_speeds:
@@ -241,9 +243,11 @@ class ParetoNavigatorRequest(BaseRequest):
                     f"An exception rose when validating the given speed {speed}.\n"
                     f"Previous exception: {type(e)}: {str(e)}."
                 )
-        
+
         if "reference_point" in response and "classification" in response:
-            msg = "Please specify only one kind of preference info if changing direction"
+            msg = (
+                "Please specify only one kind of preference info if changing direction"
+            )
             raise ParetoNavigatorException(msg)
         elif "reference_point" in response:
             validate_reference_point(
@@ -251,23 +255,23 @@ class ParetoNavigatorRequest(BaseRequest):
             )
         elif "classification" in response:
             classifications = np.unique(response["classification"])
-            if not np.all(
-                np.isin(classifications, self._valid_classifications)
-            ):
+            if not np.all(np.isin(classifications, self._valid_classifications)):
                 msg = "Invalid classifications"
                 raise ParetoNavigatorException(msg)
 
         self._response = response
-    
+
 
 class ParetoNavigatorSolutionRequest(BaseRequest):
     """
     A request class to handle ...
     """
-    def __init__(self,         
+
+    def __init__(
+        self,
         approx_solution: np.ndarray,
         pareto_optimal_solution: np.ndarray,
-        objective_values: np.ndarray
+        objective_values: np.ndarray,
     ):
         """
         Args:
@@ -279,7 +283,7 @@ class ParetoNavigatorSolutionRequest(BaseRequest):
             "If you are satisfied with this pareto optimal solution "
             "please state 'satisfied' as 'True'. This will end the navigation. "
             "Otherwise state 'satisfied' as 'False and the navigation will "
-            "be continued with this pareto optimal solution added to the approximation."          
+            "be continued with this pareto optimal solution added to the approximation."
         )
 
         content = {
@@ -290,7 +294,6 @@ class ParetoNavigatorSolutionRequest(BaseRequest):
         }
 
         super().__init__("preferred_solution_preference", "required", content=content)
-
 
     @BaseRequest.response.setter
     def response(self, response: Dict) -> None:
@@ -315,7 +318,7 @@ class ParetoNavigatorStopRequest(BaseRequest):
         objective_values: np.ndarray,
     ):
         """
-        Initialize termination request with approximate solution, 
+        Initialize termination request with approximate solution,
         final solution and corresponding objective vector.
 
         Args:
@@ -352,12 +355,16 @@ class ParetoNavigator(InteractiveMethod):
         pareto_optimal_solutions: np.ndarray,  # Initial pareto optimal solutions
         scalar_method: Optional[ScalarMethod] = None,
     ):
-        self._scalar_method = scalar_method
-        if np.all(np.isinf(problem.nadir)) or np.all(np.isinf(problem.ideal)): 
+        self._scalar_method = scalar_method  # CHECK
+
+        if np.any(np.isinf(problem.nadir)) or np.any(np.isinf(problem.ideal)):
             # Get the ideal and nadir from the provided po solutions
-            print("calculating nadir and ideal\n\n\n\n")
-            nadir = np.max(pareto_optimal_solutions, axis=0)
-            ideal = np.min(pareto_optimal_solutions, axis=0)
+            nadir = np.max(
+                pareto_optimal_solutions, axis=0
+            )  # Does it hold that ideal < nadir
+            ideal = np.min(
+                pareto_optimal_solutions, axis=0
+            )  # if obj to maximize, does it still hold, are the values given that
             # flip if maximize
             # max_multiplier = problem._max_multiplier
             # ideal = max_multiplier*ideal
@@ -365,15 +372,16 @@ class ParetoNavigator(InteractiveMethod):
         else:
             nadir = problem.nadir
             ideal = problem.ideal
-            
+
         self._problem = problem
 
         self._ideal = ideal
         self._nadir = nadir
         self._n_objectives = self._ideal.shape[0]
 
-
-        A, self.b = self.polyhedral_set_eq(pareto_optimal_solutions) # Get ideal and nadir from here?
+        A, self.b = self.polyhedral_set_eq(
+            pareto_optimal_solutions
+        )  # Get ideal and nadir from here?
         self._weights = self.calculate_weights(self._ideal, self._nadir)
 
         self.lppp_A = self.construct_lppp_A(
@@ -409,12 +417,16 @@ class ParetoNavigator(InteractiveMethod):
             ParetoNavigatorSolutionRequest,
             ParetoNavigatorStopRequest,
         ],
-    ) -> Union[ParetoNavigatorRequest, ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest]:
+    ) -> Union[
+        ParetoNavigatorRequest,
+        ParetoNavigatorSolutionRequest,
+        ParetoNavigatorStopRequest,
+    ]:
         """
         Perform the next logical iteration step based on the given request type.
 
         Args:
-            request (Union[ParetoNavigatorInitialRequest, ParetoNavigatorRequest, 
+            request (Union[ParetoNavigatorInitialRequest, ParetoNavigatorRequest,
             ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest]):
             A ParetoNavigatorRequest
 
@@ -436,6 +448,15 @@ class ParetoNavigator(InteractiveMethod):
     def handle_initial_request(
         self, request: ParetoNavigatorInitialRequest
     ) -> ParetoNavigatorRequest:
+        """
+        Handles the initial request.
+
+        Args:
+           request (ParetoNavigatorInitialRequest): Initial request
+
+        Returns:
+            Tuple[ParetoNavigatorRequest, SimplePlotRequest]: A navigation request and a plot request
+        """
         if "reference_point" in request.response:
             self._reference_point = request.response["reference_point"]
             starting_point = self.solve_asf(self._problem, self._reference_point)
@@ -445,17 +466,37 @@ class ParetoNavigator(InteractiveMethod):
             ]
 
         self._current_solution = starting_point
-        self._current_speed = request.response["speed"]/np.max(self._allowed_speeds)
+        self._current_speed = request.response["speed"] / np.max(self._allowed_speeds)
 
         msg = "Current solution"
-        plot_request = self.create_plot_request(np.atleast_2d(self._current_solution), msg)
+        plot_request = self.create_plot_request(
+            np.atleast_2d(self._current_solution), msg
+        )
 
         return ParetoNavigatorRequest.init_with_method(self), plot_request
 
     def handle_request(
         self, request: ParetoNavigatorRequest
-    ) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
+    ) -> Tuple[
+        Union[
+            ParetoNavigatorRequest,
+            ParetoNavigatorSolutionRequest,
+            ParetoNavigatorStopRequest,
+        ],
+        SimplePlotRequest,
+    ]:
+        """
+        Handles a navigation request.
 
+        Args:
+           request (ParetoNavigatorRequest): A request
+
+        Returns:
+            Tuple[
+                Union[ParetoNavigatorRequest, ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest],
+                SimplePlotRequest
+            ]: Next request corresponding to the DM's preferences and a plot request
+        """
         resp: dict = request.response
         if resp is None:
             resp = {}
@@ -465,17 +506,24 @@ class ParetoNavigator(InteractiveMethod):
                 self._problem,
                 self._current_solution,
             )
-            self._po_objectives = self._problem.evaluate(self._po_solution).objectives.squeeze()
+            self._po_objectives = self._problem.evaluate(
+                self._po_solution
+            ).objectives.squeeze()
             msg = "Pareto optimal solution"
-            plot_request = self.create_plot_request(np.atleast_2d(self._po_objectives), msg)
-            return ParetoNavigatorSolutionRequest(
-                self._current_solution, self._po_solution, self._po_objectives
-            ), plot_request
+            plot_request = self.create_plot_request(
+                np.atleast_2d(self._po_objectives), msg
+            )
+            return (
+                ParetoNavigatorSolutionRequest(
+                    self._current_solution, self._po_solution, self._po_objectives
+                ),
+                plot_request,
+            )
 
         if "speed" in resp:
             self._current_speed = resp["speed"] / np.max(self._allowed_speeds)
 
-        if "step_back" in resp and resp["step_back"]: # Check!
+        if "step_back" in resp and resp["step_back"]:  # Check!
             self._current_speed *= -1
         else:  # Make sure speed is positive
             self._current_speed = np.abs(self._current_speed)
@@ -507,52 +555,61 @@ class ParetoNavigator(InteractiveMethod):
         )
 
         msg = "Current solution"
-        plot_request = self.create_plot_request(np.atleast_2d(self._current_solution), msg)
+        plot_request = self.create_plot_request(
+            np.atleast_2d(self._current_solution), msg
+        )
         return ParetoNavigatorRequest.init_with_method(self), plot_request
-    
+
     def handle_solution_request(
         self, request: ParetoNavigatorSolutionRequest
     ) -> Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
         """
-        Handle a solution request response
+        Handle a solution request
 
-        Args: 
+        Args:
             request (ParetoNavigatorSolutionRequest): A solution request
 
         Returns:
-            Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]
+            Tuple[
+                Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest],
+                SimplePlotRequest
+            ]: A navigation request or a stop request depending on whether
+            the DM wishes to continue or stop and a plot request
         """
         resp = request.response
-        if resp is not None: # Is not satisfied with the solution
+        if resp is not None:  # Is not satisfied with the solution
             if "satisfied" in resp and resp["satisfied"]:
                 final_solution = self._po_solution
                 msg = "Final solution reached"
-                plot_request = self.create_plot_request(np.atleast_2d(self._po_objectives), msg)
+                plot_request = self.create_plot_request(
+                    np.atleast_2d(self._po_objectives), msg
+                )
                 stop_request = ParetoNavigatorStopRequest(
                     self._current_solution, final_solution, self._po_objectives
                 )
                 return stop_request, plot_request
-        
+
         # No response or not satisfied
 
         # Add solution to approximation
-        self._pareto_optimal_solutions = np.vstack((self._pareto_optimal_solutions, self._po_objectives))
+        self._pareto_optimal_solutions = np.vstack(
+            (self._pareto_optimal_solutions, self._po_objectives)
+        )
         A, self.b = self.polyhedral_set_eq(self._pareto_optimal_solutions)
-        # Update ideal and nadir, then also weights... 
+        # Update ideal and nadir, then also weights...
         # self._weights = self.calculate_weights(self._ideal, self._nadir)
 
         # update lppp A
-        self.lppp_A = self.construct_lppp_A(
-            self._weights, A
-        )
+        self.lppp_A = self.construct_lppp_A(self._weights, A)
 
         msg = "Previous solution"
         plot_request = self.create_plot_request(np.atleast_2d(self._po_objectives), msg)
 
         return ParetoNavigatorRequest.init_with_method(self), plot_request
-    
-    
-    def create_plot_request(self, objectives: np.ndarray, msg: str) -> SimplePlotRequest:
+
+    def create_plot_request(
+        self, objectives: np.ndarray, msg: str
+    ) -> SimplePlotRequest:
         """Used to create a plot request for visualizing objective values.
 
         Args:
@@ -564,7 +621,8 @@ class ParetoNavigator(InteractiveMethod):
         """
         if isinstance(self._problem, MOProblem):
             dimensions_data = pd.DataFrame(
-                index=["minimize", "ideal", "nadir"], columns=self._problem.get_objective_names(),
+                index=["minimize", "ideal", "nadir"],
+                columns=self._problem.get_objective_names(),
             )
             dimensions_data.loc["minimize"] = self._problem._max_multiplier
             dimensions_data.loc["ideal"] = self._ideal
@@ -572,26 +630,32 @@ class ParetoNavigator(InteractiveMethod):
 
             data = pd.DataFrame(objectives, columns=self._problem.get_objective_names())
         else:
-            dimensions_data = pd.DataFrame(index=["minimize", "ideal", "nadir"], columns=self._problem.objective_names,)
+            dimensions_data = pd.DataFrame(
+                index=["minimize", "ideal", "nadir"],
+                columns=self._problem.objective_names,
+            )
             dimensions_data.loc["minimize"] = [1 for _ in self._problem.objective_names]
             dimensions_data.loc["ideal"] = self._ideal
             dimensions_data.loc["nadir"] = self._nadir
 
             data = pd.DataFrame(objectives, columns=self._problem.objective_names)
 
-        plot_request = SimplePlotRequest(data=data, dimensions_data=dimensions_data, message=msg,)
+        plot_request = SimplePlotRequest(
+            data=data,
+            dimensions_data=dimensions_data,
+            message=msg,
+        )
 
         return plot_request
-    
 
     def calculate_weights(self, ideal: np.ndarray, nadir: np.ndarray):
         """
-        Calculate the scaling coefficients w from ideal and nadir. 
+        Calculate the scaling coefficients w from ideal and nadir.
 
         Args:
             ideal (np.ndarray): Ideal vector
             nadir (np.ndarray): Nadir vector
-        
+
         Returns:
             np.ndarray: The scaling coefficients
         """
@@ -608,12 +672,10 @@ class ParetoNavigator(InteractiveMethod):
             po_solutions (np.ndarray): Some pareto optimal solutions
 
         Returns:
-            (np.ndarray, np.ndarray): Matrix A and vector b from the 
+            (np.ndarray, np.ndarray): Matrix A and vector b from the
             convex hull inequality representation Az <= b
         """
-        convex_hull = ConvexHull(
-            po_solutions
-        )  # facet: Az + b = 0 so inside: Az <= -b
+        convex_hull = ConvexHull(po_solutions)  # facet: Az + b = 0 so inside: Az <= -b
         A = convex_hull.equations[:, 0:-1]
         b = -convex_hull.equations[:, -1]
         return A, b
@@ -621,6 +683,13 @@ class ParetoNavigator(InteractiveMethod):
     def construct_lppp_A(self, weights, A):
         """
         The matrix A used in the linear parametric programming problem
+
+        Args:
+            weights (np.ndarray): Scaling coefficients
+            A (np.ndarray): Matrix A from the convex hull representation Ax < b
+
+        Returns:
+            np.ndarray: The matrix A' in the linear parametric programming problem A'x<b'
         """
         k = len(weights)
         diag = np.zeros((k, k))
@@ -636,6 +705,16 @@ class ParetoNavigator(InteractiveMethod):
         return lppp_A
 
     def calculate_direction(self, current_solution: np.ndarray, ref_point: np.ndarray):
+        """
+        Calculate a new direction from current solution and a given reference point
+
+        Args:
+            current_solution (np.ndarray): The current solution
+            ref_point (np.ndarray): A reference point
+
+        Returns:
+            np.ndarray: A new direction
+        """
         return ref_point - current_solution
 
     def classification_to_ref_point(
@@ -646,6 +725,9 @@ class ParetoNavigator(InteractiveMethod):
 
         Args:
             classifications (np.ndarray): Classification for each objective
+            ideal (np.ndarray): Ideal point
+            nadir (np.ndarray): Nadir point
+            current_solution (np.ndarray): Current solution
 
         Returns:
             np.ndarray: A reference point which is constructed from the classifications
@@ -684,7 +766,7 @@ class ParetoNavigator(InteractiveMethod):
             a (float): Alpha in problem (3)
             A (np.ndarray): Matrix A from Az <= b
             b (np.ndarray): Vector b from Az <= b
-        
+
         Returns:
             np.ndarray: Optimal vector from the linear parametric programming problem.
             This is the new solution to be used in the navigation.
@@ -694,17 +776,19 @@ class ParetoNavigator(InteractiveMethod):
 
         moved_ref_point = current_sol + (a * direction)
         moved_ref_point = np.reshape(moved_ref_point, ((k, 1)))
-        b_new = np.append(moved_ref_point, b) 
+        b_new = np.append(moved_ref_point, b)
 
         obj_bounds = np.stack((ideal, nadir))
-        bounds = [(None, None)] + [(x, y) for x, y in obj_bounds.T] 
+        bounds = [(None, None)] + [(x, y) for x, y in obj_bounds.T]
         sol = linprog(c=c, A_ub=A, b_ub=b_new, bounds=bounds)
         if sol["success"]:
             return sol["x"][1:]  # zeta in index 0.
         else:
             raise ParetoNavigatorException("Couldn't calculate a new solution")
 
-    def solve_asf(self, problem: Union[MOProblem, DiscreteDataProblem], ref_point: np.ndarray):
+    def solve_asf(
+        self, problem: Union[MOProblem, DiscreteDataProblem], ref_point: np.ndarray
+    ):
         """
         Solve achievement scalarizing function with simpleasf
 
@@ -736,17 +820,20 @@ class ParetoNavigator(InteractiveMethod):
             )
 
             res = solver.minimize(problem.get_variable_upper_bounds() / 2)
-        else: # Discrete case
-            scalarizer = DiscreteScalarizer(asf, scalarizer_args={"reference_point": np.atleast_2d(ref_point)})
+        else:  # Discrete case
+            scalarizer = DiscreteScalarizer(
+                asf, scalarizer_args={"reference_point": np.atleast_2d(ref_point)}
+            )
             solver = DiscreteMinimizer(scalarizer)
             res = solver.minimize(problem.objectives)
-        
+
         if res["success"]:
             return res["x"]
         else:
             raise ParetoNavigatorException(
                 "Could solve achievement scalarazing function"
             )
+
 
 # Testing
 if __name__ == "__main__":
@@ -779,7 +866,7 @@ if __name__ == "__main__":
     objectives_n = len(objectives)
 
     # variables
-    var_names = ["x1", "x2"]  # Make sure that the variable names are meaningful to you.
+    var_names = ["x1", "x2"]
     variables_n = len(var_names)
 
     initial_values = np.array([2, 3])
@@ -809,16 +896,7 @@ if __name__ == "__main__":
     # problem
     problem = MOProblem(
         objectives=objectives, variables=variables, constraints=constraints
-    )  # objectives "seperately"
-
-    
-    from desdeo_mcdm.utilities.solvers import payoff_table_method
-
-    ideal, nadir = np.array(
-        [[-2, -3.1, -55], [5.0, 4.6, -14.25]]
-    )  # payoff_table_method(problem)
-    #problem.ideal = ideal
-    #problem.nadir = nadir
+    )
 
     po_sols = np.array(
         [
@@ -888,9 +966,9 @@ if __name__ == "__main__":
 
     request, plot_req = method.iterate(request)
     print(request.content["message"])
-    print(request.content['objective_values'])
-    
-    request, plot_req = method.iterate(request) # Not satisfied
+    print(request.content["objective_values"])
+
+    request, plot_req = method.iterate(request)  # Not satisfied
 
     print(request.content["message"])
 
@@ -903,15 +981,13 @@ if __name__ == "__main__":
         request, plot_req = method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
-    
+
     request.response = {
         "show_solution": True,
     }
 
     request, plot_req = method.iterate(request)
-    request.response = {
-        "satisfied": True
-    }
+    request.response = {"satisfied": True}
     request, plot_req = method.iterate(request)
 
     print(request.content["message"])
@@ -920,11 +996,28 @@ if __name__ == "__main__":
     print(obj_values)
 
     import matplotlib.pyplot as plt
-   
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    xs,ys,zs = np.hsplit(method._pareto_optimal_solutions,3)
-    x,y,z = np.hsplit(obj_values,3)
-    ax.scatter(xs,ys,zs)
-    ax.scatter(x,y,z, marker='o')
+
+    ax = plt.axes(projection='3d')
+    
+    # Scatter pareto optimal solutions
+    xs, ys, zs = np.hsplit(method._pareto_optimal_solutions, 3)
+    ax.scatter(xs, ys, zs)
+
+    # Scatter Pareto Optimal solutions received by navigation
+    x, y, z = np.hsplit(obj_values, 3)
+    ax.scatter(x, y, z, marker="o")
+
+    convex_hull = ConvexHull(method._pareto_optimal_solutions)
+
+    #Plotting the convex hull
+    from matplotlib.patches import Polygon
+    for s in convex_hull.simplices:
+        s = np.append(s, s[0])  # Here we cycle back to the first coordinate
+        ax.plot(
+            method._pareto_optimal_solutions[s, 0], 
+            method._pareto_optimal_solutions[s, 1],
+            method._pareto_optimal_solutions[s, 2], 
+            "r-"
+        )
+
     plt.show()
