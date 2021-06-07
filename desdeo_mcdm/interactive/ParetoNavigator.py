@@ -1,4 +1,5 @@
 from desdeo_problem import Constraint
+import desdeo_problem
 from desdeo_problem.Problem import MOProblem, DiscreteDataProblem
 from desdeo_tools.scalarization.ASF import SimpleASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer, DiscreteScalarizer
@@ -347,12 +348,13 @@ class ParetoNavigator(InteractiveMethod):
     Args:
         problem (MOProblem): The problem to be solved.
         pareto_optimal_solutions (np.ndarray): Some pareto optimal solutions to construct the polyhedral set
+
     """
 
     def __init__(
         self,
         problem: Union[MOProblem, DiscreteDataProblem],
-        pareto_optimal_solutions: np.ndarray,  # Initial pareto optimal solutions
+        pareto_optimal_solutions: np.ndarray = None,  # Initial pareto optimal solutions
         scalar_method: Optional[ScalarMethod] = None,
     ):
         self._scalar_method = scalar_method  # CHECK
@@ -381,7 +383,7 @@ class ParetoNavigator(InteractiveMethod):
 
         A, self.b = self.polyhedral_set_eq(
             pareto_optimal_solutions
-        )  # Get ideal and nadir from here?
+        ) 
         self._weights = self.calculate_weights(self._ideal, self._nadir)
 
         self.lppp_A = self.construct_lppp_A(
@@ -506,9 +508,13 @@ class ParetoNavigator(InteractiveMethod):
                 self._problem,
                 self._current_solution,
             )
-            self._po_objectives = self._problem.evaluate(
-                self._po_solution
-            ).objectives.squeeze()
+            if isinstance(self._problem, MOProblem):
+                self._po_objectives = self._problem.evaluate(
+                    self._po_solution
+                ).objectives.squeeze()
+            else:
+                self._po_objectives = self._problem.objectives[self._po_solution]
+                self._po_solution = self._problem.decision_variables[self._po_solution]
             msg = "Pareto optimal solution"
             plot_request = self.create_plot_request(
                 np.atleast_2d(self._po_objectives), msg
@@ -839,6 +845,7 @@ class ParetoNavigator(InteractiveMethod):
 if __name__ == "__main__":
     from desdeo_problem.Objective import _ScalarObjective
     from desdeo_problem import variable_builder
+    # Example from article
 
     # Objectives
     def f1(xs):
@@ -893,10 +900,7 @@ if __name__ == "__main__":
     con3 = Constraint.ScalarConstraint("c3", variables_n, objectives_n, c3)
     constraints = [con1, con2, con3]
 
-    # problem
-    problem = MOProblem(
-        objectives=objectives, variables=variables, constraints=constraints
-    )
+
 
     po_sols = np.array(
         [
@@ -910,7 +914,36 @@ if __name__ == "__main__":
         ]
     )
 
-    method = ParetoNavigator(problem, po_sols)
+    # problem
+    problem = MOProblem(
+        objectives=objectives, variables=variables, constraints=constraints
+    )
+
+    # discrete problem
+    decision_variables = np.array([
+        [0.4, 5.5],
+        [0.52, 4.9],
+        [0.48, 5],
+        [0.2, 0.6]
+    ])
+
+    objectives_values = problem.evaluate(decision_variables)[0]
+
+    data = {'x1': decision_variables[:,0],
+        'x2' : decision_variables[:,1],
+        "f1" : objectives_values[:,0],
+        "f2": objectives_values[:,1],
+        "f3": objectives_values[:,2],
+    }
+
+    discrete_problem = DiscreteDataProblem(
+        pd.DataFrame(data),
+        var_names, ["f1","f2","f3"],
+        ideal = np.array([-2, -3.1, -55]),
+        nadir = np.array([5, 4.6, -14.25])
+    )
+
+    method = ParetoNavigator(discrete_problem, po_sols)
     print(method._ideal, method._nadir)
 
     request, plot_req = method.start()
@@ -1021,3 +1054,4 @@ if __name__ == "__main__":
         )
 
     plt.show()
+
