@@ -1,6 +1,6 @@
 # desdeo-mcdm
 
-Contains interactive optimization methods for solving multiobjective optimizaton problems. This package is part of the DESDEO framework.
+Contains interactive optimization methods for solving multiobjective optimization problems. This package is part of the DESDEO framework.
 
 ## Installation
 

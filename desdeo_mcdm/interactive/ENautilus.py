@@ -167,7 +167,7 @@ class ENautilus(InteractiveMethod):
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise ENautilusException(
-                    "The supplied objective names must have a leangth equal to " "the numbr of objectives."
+                    "The supplied objective names must have a length equal to " "the number of objectives."
                 )
             self._objective_names = objective_names
         else:
@@ -186,7 +186,7 @@ class ENautilus(InteractiveMethod):
         # in objective space!
         self._pareto_front = pareto_front
 
-        # bounds of the rechable region
+        # bounds of the reachable region
         self._reachable_ub = self._nadir
         self._reachable_lb = self._ideal
 
@@ -211,7 +211,7 @@ class ENautilus(InteractiveMethod):
     def iterate(
         self, request: Union[ENautilusInitialRequest, ENautilusRequest]
     ) -> Union[ENautilusRequest, ENautilusStopRequest]:
-        """Perform the next logical iteratino step based on the given request type.
+        """Perform the next logical iteration step based on the given request type.
 
         """
         if type(request) is ENautilusInitialRequest:
@@ -223,7 +223,7 @@ class ENautilus(InteractiveMethod):
             return request
 
     def handle_initial_request(self, request: ENautilusInitialRequest) -> ENautilusRequest:
-        """Handles the initial request by parsing the response appropiately.
+        """Handles the initial request by parsing the response appropriately.
 
         """
         self._n_iterations = request.response["n_iterations"]
@@ -277,7 +277,7 @@ class ENautilus(InteractiveMethod):
     def calculate_representative_points(
         self, pareto_front: np.ndarray, subset_indices: List[int], n_points: int
     ) -> np.ndarray:
-        """Calcualtes the most representative points on the Pareto front. The points are clustered using k-means.
+        """Calculates the most representative points on the Pareto front. The points are clustered using k-means.
 
         Args:
             pareto_front (np.ndarray): The Pareto front.
@@ -307,7 +307,7 @@ class ENautilus(InteractiveMethod):
     def calculate_intermediate_points(
         self, preferred_point: np.ndarray, zbars: np.ndarray, n_iterations_left: int,
     ) -> np.ndarray:
-        """Calcualtes the intermediate points between representative points an a preferred point.
+        """Calculates the intermediate points between representative points an a preferred point.
 
         Args:
             preferred_point (np.ndarray): The preferred point, 1D array.
@@ -328,7 +328,7 @@ class ENautilus(InteractiveMethod):
 
         Args:
             pareto_front (np.ndarray): The Pareto optimal front.
-            intermediate_points (np.ndarray): The current intermedaite points as a 2D array.
+            intermediate_points (np.ndarray): The current intermediate points as a 2D array.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: The lower and upper bounds for each of the intermediate points.
