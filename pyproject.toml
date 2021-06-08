@@ -29,6 +29,7 @@ jupyter = "^1.0.0"
 matplotlib = "^3.2.1"
 nb-clean = "^1.4.3"
 ad = "^1.3.2"
+jinja2 = "2.11"
 
 [build-system]
 requires = ["poetry>=0.12"]
