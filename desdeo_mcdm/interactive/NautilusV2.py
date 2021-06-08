@@ -115,15 +115,15 @@ def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
 
             for obj in elem[0]:
                 if not isinstance(obj, int) or int(obj) <= 0:
-                    msg = "All objective function indeces must be a positive integer number. Given indeces ratios: {}.". \
+                    msg = "All objective function indices must be positive integer numbers. Given indices ratios: {}.". \
                         format([elem[0] for elem in response["preference_info"]])
                     raise NautilusException(msg)
 
-                # if index matches any of the problem's indeces
+                # if index matches any of the problem's indices
                 match = [(i + 1) == obj for i in range(n_objectives)]
 
                 if not any(match):
-                    msg = "Range of objective function indeces '{}' must match the problem's number of objectives '{}'." \
+                    msg = "Range of objective function indices '{}' must match the problem's number of objectives '{}'." \
                         .format([elem[[0][0]] for elem in response["preference_info"]], n_objectives)
                     raise NautilusException(msg)
 
@@ -131,12 +131,12 @@ def validate_n2_preferences(n_objectives: int, response: Dict) -> None:
                 obj_mask[obj - 1] = True
 
             if not isinstance(elem[1], int) and not isinstance(elem[1], float):
-                msg = "All improvement ratios must be a integer of float number. Given improvement ratios: {}.". \
+                msg = "All improvement ratios must be either integer or float numbers. Given improvement ratios: {}.". \
                     format([elem[1] for elem in response["preference_info"]])
                 raise NautilusException(msg)
 
             if float(elem[1]) <= 0:
-                msg = "All improvement ratios must a positive number greater than zero. Given improvement ratios: {}.". \
+                msg = "All improvement ratios must positive numbers greater than zero. Given improvement ratios: {}.". \
                     format([elem[1] for elem in response["preference_info"]])
                 raise NautilusException(msg)
 
@@ -197,7 +197,7 @@ class NautilusInitialRequest(BaseRequest):
             "Please specify as 'preference_method' whether to \n"
             "1. Give directly components for direction of improvement.\n"
             "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio"
-            " as 1 and specify other objectives' improvement ratios in relatation to that."
+            " as 1 and specify other objectives' improvement ratios in relation to that."
             "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this "
             "pair. For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
             "Depending on your selection on 'preference_method', please specify either the direct components, "
@@ -284,7 +284,7 @@ class NautilusRequest(BaseRequest):
             "Please specify as 'preference_method' whether to \n"
             "1. Give directly components for direction of improvement.\n"
             "2. Give improvement ratios between two different objectives. Choose one objective's improvement ratio as "
-            "1, and specify other objectives' improvement ratios in relatation to that."
+            "1, and specify other objectives' improvement ratios in relation to that."
             "3. Give a pair of objectives (i, j) and provide a value T > 0 as the desirable improvement ratio of this "
             "pair. For example: [((1,2), 2), ((1,3), 1), ((3,4), 1.5)]."
             "Depending on your selection on 'preference_method', please specify either the direct components, "
@@ -411,7 +411,7 @@ class NautilusV2(InteractiveMethod):
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise NautilusException(
-                    "The supplied objective names must have a leangth equal to " "the numbr of objectives."
+                    "The supplied objective names must have a length equal to " "the number of objectives."
                 )
             self._objective_names = objective_names
         else:
@@ -595,7 +595,7 @@ class NautilusV2(InteractiveMethod):
             request (NautilusRequest): Intermediate request including Decision maker's response.
 
         Returns:
-            Union[NautilusRequest, NautilusStopRequest]: In case last iteration, request to stop the solution process.
+            Union[NautilusRequest, NautilusStopRequest]: In case of last iteration, request to stop the solution process.
             Otherwise, new request with updated solution process information.
 
         """
@@ -832,7 +832,7 @@ class NautilusV2(InteractiveMethod):
                 # delta for objective i
                 delta_i = elem[1]
 
-                # set delta for objective i, minus 1 because objective indeces start at 1, but deltas are stored
+                # set delta for objective i, minus 1 because objective indices start at 1, but deltas are stored
                 # starting from index 0.
                 deltas[elem[0][1] - 1] = delta_i
 
@@ -841,7 +841,7 @@ class NautilusV2(InteractiveMethod):
                 deltas[elem[0][0] - 1] = delta_i
 
         # 2. if all deltas not set
-        # indeces of objectives for which deltas are still missing
+        # indices of objectives for which deltas are still missing
         missing = [ind + 1 for ind, elem in enumerate(deltas) if elem == 0]
 
         while (0 in deltas):
