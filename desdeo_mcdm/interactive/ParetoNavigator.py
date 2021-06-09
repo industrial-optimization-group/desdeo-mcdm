@@ -1,5 +1,6 @@
+import numpy as np
+import pandas as pd
 from desdeo_problem import Constraint
-import desdeo_problem
 from desdeo_problem.Problem import MOProblem, DiscreteDataProblem
 from desdeo_tools.scalarization.ASF import SimpleASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer, DiscreteScalarizer
@@ -8,25 +9,16 @@ from desdeo_tools.solver.ScalarSolver import (
     ScalarMinimizer,
     DiscreteMinimizer,
 )
-from scipy.optimize.zeros import toms748
 from desdeo_mcdm.interactive.ReferencePointMethod import validate_reference_point
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
+from desdeo_tools.interaction.request import BaseRequest
 from scipy.spatial import ConvexHull
-import numpy as np
-import pandas as pd
 from scipy.optimize import linprog
 
 # TODO
-# If maximizing then ideal > nadir -> scipy linalg fails
-#   Propably because bounds will be flipped then
-
-
-# Maybe DONE
-# Discrete case
-# Plot requests
-
+# Verify Discrete case
+# Do some testing
 
 class ParetoNavigatorException(Exception):
     """Raised when an exception related to Pareto Navigator is encountered."""
@@ -194,7 +186,7 @@ class ParetoNavigatorRequest(BaseRequest):
         content = {
             "message": msg,
             "current_solution": current_solution,
-            "valid_classificatons": valid_classifications,
+            "valid_classifications": valid_classifications,
         }
 
         super().__init__("reference_point_preference", "required", content=content)
@@ -265,7 +257,7 @@ class ParetoNavigatorRequest(BaseRequest):
 
 class ParetoNavigatorSolutionRequest(BaseRequest):
     """
-    A request class to handle ...
+    A request class to handle requests to see pareto optimal solution. 
     """
 
     def __init__(
@@ -283,7 +275,7 @@ class ParetoNavigatorSolutionRequest(BaseRequest):
         msg = (
             "If you are satisfied with this pareto optimal solution "
             "please state 'satisfied' as 'True'. This will end the navigation. "
-            "Otherwise state 'satisfied' as 'False and the navigation will "
+            "Otherwise state 'satisfied' as 'False' and the navigation will "
             "be continued with this pareto optimal solution added to the approximation."
         )
 
@@ -363,14 +355,10 @@ class ParetoNavigator(InteractiveMethod):
             # Get the ideal and nadir from the provided po solutions
             nadir = np.max(
                 pareto_optimal_solutions, axis=0
-            )  # Does it hold that ideal < nadir
+            ) 
             ideal = np.min(
                 pareto_optimal_solutions, axis=0
-            )  # if obj to maximize, does it still hold, are the values given that
-            # flip if maximize
-            # max_multiplier = problem._max_multiplier
-            # ideal = max_multiplier*ideal
-            # nadir = max_multiplier*nadir
+            )
         else:
             nadir = problem.nadir
             ideal = problem.ideal
@@ -379,7 +367,6 @@ class ParetoNavigator(InteractiveMethod):
 
         self._ideal = ideal
         self._nadir = nadir
-        self._n_objectives = self._ideal.shape[0]
 
         A, self.b = self.polyhedral_set_eq(
             pareto_optimal_solutions
@@ -409,7 +396,7 @@ class ParetoNavigator(InteractiveMethod):
         Returns:
             ParetoNavigatorInitialRequest: Initial request
         """
-        return ParetoNavigatorInitialRequest.init_with_method(self), None
+        return ParetoNavigatorInitialRequest.init_with_method(self)
 
     def iterate(
         self,
@@ -457,11 +444,11 @@ class ParetoNavigator(InteractiveMethod):
            request (ParetoNavigatorInitialRequest): Initial request
 
         Returns:
-            Tuple[ParetoNavigatorRequest, SimplePlotRequest]: A navigation request and a plot request
+            ParetoNavigatorRequest: A navigation request
         """
         if "reference_point" in request.response:
             self._reference_point = request.response["reference_point"]
-            starting_point = self.solve_asf(self._problem, self._reference_point)
+            starting_point = self.solve_asf(self._problem, self._reference_point, self._scalar_method)
         else:  # Preferred po solution
             starting_point = self._pareto_optimal_solutions[
                 request.response["preferred_solution"]
@@ -470,23 +457,15 @@ class ParetoNavigator(InteractiveMethod):
         self._current_solution = starting_point
         self._current_speed = request.response["speed"] / np.max(self._allowed_speeds)
 
-        msg = "Current solution"
-        plot_request = self.create_plot_request(
-            np.atleast_2d(self._current_solution), msg
-        )
-
-        return ParetoNavigatorRequest.init_with_method(self), plot_request
+        return ParetoNavigatorRequest.init_with_method(self)
 
     def handle_request(
         self, request: ParetoNavigatorRequest
-    ) -> Tuple[
-        Union[
+    ) -> Union[
             ParetoNavigatorRequest,
             ParetoNavigatorSolutionRequest,
             ParetoNavigatorStopRequest,
-        ],
-        SimplePlotRequest,
-    ]:
+        ]:
         """
         Handles a navigation request.
 
@@ -494,10 +473,8 @@ class ParetoNavigator(InteractiveMethod):
            request (ParetoNavigatorRequest): A request
 
         Returns:
-            Tuple[
-                Union[ParetoNavigatorRequest, ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest],
-                SimplePlotRequest
-            ]: Next request corresponding to the DM's preferences and a plot request
+            Union[ParetoNavigatorRequest, ParetoNavigatorSolutionRequest, ParetoNavigatorStopRequest]:
+            Next request corresponding the DM's preferences
         """
         resp: dict = request.response
         if resp is None:
@@ -515,15 +492,10 @@ class ParetoNavigator(InteractiveMethod):
             else:
                 self._po_objectives = self._problem.objectives[self._po_solution]
                 self._po_solution = self._problem.decision_variables[self._po_solution]
-            msg = "Pareto optimal solution"
-            plot_request = self.create_plot_request(
-                np.atleast_2d(self._po_objectives), msg
-            )
             return (
                 ParetoNavigatorSolutionRequest(
                     self._current_solution, self._po_solution, self._po_objectives
-                ),
-                plot_request,
+                )
             )
 
         if "speed" in resp:
@@ -560,11 +532,7 @@ class ParetoNavigator(InteractiveMethod):
             self.b,
         )
 
-        msg = "Current solution"
-        plot_request = self.create_plot_request(
-            np.atleast_2d(self._current_solution), msg
-        )
-        return ParetoNavigatorRequest.init_with_method(self), plot_request
+        return ParetoNavigatorRequest.init_with_method(self)
 
     def handle_solution_request(
         self, request: ParetoNavigatorSolutionRequest
@@ -575,25 +543,19 @@ class ParetoNavigator(InteractiveMethod):
         Args:
             request (ParetoNavigatorSolutionRequest): A solution request
 
-        Returns:
-            Tuple[
-                Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest],
-                SimplePlotRequest
-            ]: A navigation request or a stop request depending on whether
-            the DM wishes to continue or stop and a plot request
+        Returns: 
+            Union[ParetoNavigatorRequest, ParetoNavigatorStopRequest]:
+            A navigation request or a stop request depending on whether
+            the DM wishes to continue or stop
         """
         resp = request.response
         if resp is not None:  # Is not satisfied with the solution
             if "satisfied" in resp and resp["satisfied"]:
                 final_solution = self._po_solution
-                msg = "Final solution reached"
-                plot_request = self.create_plot_request(
-                    np.atleast_2d(self._po_objectives), msg
-                )
                 stop_request = ParetoNavigatorStopRequest(
                     self._current_solution, final_solution, self._po_objectives
                 )
-                return stop_request, plot_request
+                return stop_request
 
         # No response or not satisfied
 
@@ -608,51 +570,7 @@ class ParetoNavigator(InteractiveMethod):
         # update lppp A
         self.lppp_A = self.construct_lppp_A(self._weights, A)
 
-        msg = "Previous solution"
-        plot_request = self.create_plot_request(np.atleast_2d(self._po_objectives), msg)
-
-        return ParetoNavigatorRequest.init_with_method(self), plot_request
-
-    def create_plot_request(
-        self, objectives: np.ndarray, msg: str
-    ) -> SimplePlotRequest:
-        """Used to create a plot request for visualizing objective values.
-
-        Args:
-            objectives (np.ndarray): A 2D numpy array containing objective vectors to be visualized.
-            msg (str): A message to be displayed in the context of a visualization.
-
-        Returns:
-            SimplePlotRequest: A plot request to create a visualization.
-        """
-        if isinstance(self._problem, MOProblem):
-            dimensions_data = pd.DataFrame(
-                index=["minimize", "ideal", "nadir"],
-                columns=self._problem.get_objective_names(),
-            )
-            dimensions_data.loc["minimize"] = self._problem._max_multiplier
-            dimensions_data.loc["ideal"] = self._ideal
-            dimensions_data.loc["nadir"] = self._nadir
-
-            data = pd.DataFrame(objectives, columns=self._problem.get_objective_names())
-        else:
-            dimensions_data = pd.DataFrame(
-                index=["minimize", "ideal", "nadir"],
-                columns=self._problem.objective_names,
-            )
-            dimensions_data.loc["minimize"] = [1 for _ in self._problem.objective_names]
-            dimensions_data.loc["ideal"] = self._ideal
-            dimensions_data.loc["nadir"] = self._nadir
-
-            data = pd.DataFrame(objectives, columns=self._problem.objective_names)
-
-        plot_request = SimplePlotRequest(
-            data=data,
-            dimensions_data=dimensions_data,
-            message=msg,
-        )
-
-        return plot_request
+        return ParetoNavigatorRequest.init_with_method(self)
 
     def calculate_weights(self, ideal: np.ndarray, nadir: np.ndarray):
         """
@@ -793,7 +711,10 @@ class ParetoNavigator(InteractiveMethod):
             raise ParetoNavigatorException("Couldn't calculate a new solution")
 
     def solve_asf(
-        self, problem: Union[MOProblem, DiscreteDataProblem], ref_point: np.ndarray
+        self, 
+        problem: Union[MOProblem, DiscreteDataProblem],
+        ref_point: np.ndarray,
+        method: ScalarMethod = None,
     ):
         """
         Solve achievement scalarizing function with simpleasf
@@ -801,6 +722,7 @@ class ParetoNavigator(InteractiveMethod):
         Args:
             problem (MOProblem): The problem
             ref_point: A reference point
+            method (ScalarMethod): A method provided to the scalar minimizer
 
         Returns:
             np.ndarray: The decision vector which solves the achievement scalarizing function
@@ -822,7 +744,7 @@ class ParetoNavigator(InteractiveMethod):
                 scalarizer,
                 problem.get_variable_bounds(),
                 constraint_evaluator=_con_eval,
-                method=self._scalar_method,
+                method= method,
             )
 
             res = solver.minimize(problem.get_variable_upper_bounds() / 2)
@@ -943,10 +865,10 @@ if __name__ == "__main__":
         nadir = np.array([5, 4.6, -14.25])
     )
 
-    method = ParetoNavigator(discrete_problem, po_sols)
+    method = ParetoNavigator(problem, po_sols)
     print(method._ideal, method._nadir)
 
-    request, plot_req = method.start()
+    request = method.start()
     print(request.content["message"])
 
     request.response = {
@@ -954,7 +876,7 @@ if __name__ == "__main__":
         "speed": 2,
     }
 
-    request, plot_req = method.iterate(request)
+    request = method.iterate(request)
     print(request.content["message"])
     print(request.content["current_solution"])
 
@@ -964,7 +886,7 @@ if __name__ == "__main__":
     }
 
     for i in range(50):
-        request, plot_req = method.iterate(request)
+        request = method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
         if np.all(np.abs(cur_sol - np.array([0.35, -0.51, -26.26])) < 0.3):
@@ -976,18 +898,19 @@ if __name__ == "__main__":
     }
 
     for i in range(50):
-        request, plot_req = method.iterate(request)
+        request= method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
         if np.all(np.abs(cur_sol - np.array([-0.64, 1.82, -25.95])) < 0.3):
             break
+
 
     request.response = {
         "classification": [">", "<", "<"],
     }
 
     for i in range(50):
-        request, plot_req = method.iterate(request)
+        reques= method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
         if np.all(np.abs(cur_sol - np.array([-0.32, 2.33, -27.85])) < 0.3):
@@ -997,11 +920,11 @@ if __name__ == "__main__":
         "show_solution": True,
     }
 
-    request, plot_req = method.iterate(request)
+    request = method.iterate(request)
     print(request.content["message"])
     print(request.content["objective_values"])
 
-    request, plot_req = method.iterate(request)  # Not satisfied
+    request = method.iterate(request)  # Not satisfied
 
     print(request.content["message"])
 
@@ -1011,7 +934,7 @@ if __name__ == "__main__":
     }
 
     for i in range(4):
-        request, plot_req = method.iterate(request)
+        request = method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
 
@@ -1019,9 +942,9 @@ if __name__ == "__main__":
         "show_solution": True,
     }
 
-    request, plot_req = method.iterate(request)
+    request = method.iterate(request)
     request.response = {"satisfied": True}
-    request, plot_req = method.iterate(request)
+    request = method.iterate(request)
 
     print(request.content["message"])
     print(request.content["final_solution"])
