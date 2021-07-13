@@ -32,7 +32,22 @@ __all__ = [
     "RPMInitialRequest",
     "RPMRequest",
     "RPMStopRequest",
+    "ParetoNavigator",
+    "ParetoNavigatorException",
+    "ParetoNavigatorInitialRequest",
+    "ParetoNavigatorRequest",
+    "ParetoNavigatorSolutionRequest",
+    "ParetoNavigatorStopRequest",
 ]
+
+from desdeo_mcdm.interactive.ParetoNavigator import (
+    ParetoNavigator,
+    ParetoNavigatorException,
+    ParetoNavigatorInitialRequest,
+    ParetoNavigatorRequest,
+    ParetoNavigatorSolutionRequest,
+    ParetoNavigatorStopRequest,
+)
 
 from desdeo_mcdm.interactive.ENautilus import (
     ENautilus,
