@@ -353,6 +353,8 @@ class ParetoNavigator(InteractiveMethod):
         if type(problem) is MOProblem and pareto_optimal_solutions is None:
             msg = "Supply initial pareto optimal solutions if using MOProblem class"
             raise ParetoNavigatorException(msg)
+        if type(problem) is DiscreteDataProblem:
+            pareto_optimal_solutions = problem.objectives
 
         self._scalar_method = scalar_method  # CHECK
 
@@ -867,10 +869,13 @@ if __name__ == "__main__":
         [0.4, 5.5],
         [0.52, 4.9],
         [0.48, 5],
-        [0.2, 0.6]
+        [0.2, 0.6],
+        [0.1, 0.1]
     ])
 
     objectives_values = problem.evaluate(decision_variables)[0]
+
+    print(objectives_values)
 
     data = {'x1': decision_variables[:,0],
         'x2' : decision_variables[:,1],
@@ -879,14 +884,17 @@ if __name__ == "__main__":
         "f3": objectives_values[:,2],
     }
 
+    print(data)
+
     discrete_problem = DiscreteDataProblem(
         pd.DataFrame(data),
-        var_names, ["f1","f2","f3"],
+        var_names,
+        objective_names = ["f1","f2","f3"],
         ideal = np.array([-2, -3.1, -55]),
         nadir = np.array([5, 4.6, -14.25])
     )
 
-    method = ParetoNavigator(problem, po_sols)
+    method = ParetoNavigator(problem)
     print(method._ideal, method._nadir)
 
     request = method.start()
