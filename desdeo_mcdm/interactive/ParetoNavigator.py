@@ -1,3 +1,4 @@
+import desdeo_problem
 import numpy as np
 import pandas as pd
 from desdeo_problem import Constraint
@@ -349,6 +350,10 @@ class ParetoNavigator(InteractiveMethod):
         pareto_optimal_solutions: np.ndarray = None,  # Initial pareto optimal solutions
         scalar_method: Optional[ScalarMethod] = None,
     ):
+        if type(problem) is MOProblem and pareto_optimal_solutions is None:
+            msg = "Supply initial pareto optimal solutions if using MOProblem class"
+            raise ParetoNavigatorException(msg)
+
         self._scalar_method = scalar_method  # CHECK
 
         if np.any(np.isinf(problem.nadir)) or np.any(np.isinf(problem.ideal)):
@@ -455,7 +460,7 @@ class ParetoNavigator(InteractiveMethod):
             ]
 
         self._current_solution = starting_point
-        self._current_speed = request.response["speed"] / np.max(self._allowed_speeds)
+        self._current_speed = self.calculate_speed(request.response["speed"])
 
         return ParetoNavigatorRequest.init_with_method(self)
 
@@ -499,7 +504,7 @@ class ParetoNavigator(InteractiveMethod):
             )
 
         if "speed" in resp:
-            self._current_speed = resp["speed"] / np.max(self._allowed_speeds)
+            self._current_speed = self.calculate_speed(resp["speed"])
 
         if "step_back" in resp and resp["step_back"]:  # Check!
             self._current_speed *= -1
@@ -571,6 +576,19 @@ class ParetoNavigator(InteractiveMethod):
         self.lppp_A = self.construct_lppp_A(self._weights, A)
 
         return ParetoNavigatorRequest.init_with_method(self)
+
+    def calculate_speed(self, given_speed: int) -> float:
+        """
+        Calculate a speed value from given integer value. 
+
+        Args:
+            given_speed (int): a speed value where 1 is slowest and 5 fastest
+
+        Returns:
+            float: A speed value calculated from given integer value. 
+            Is between 0 and 1
+        """
+        return (given_speed / np.max(self._allowed_speeds)) / 10
 
     def calculate_weights(self, ideal: np.ndarray, nadir: np.ndarray):
         """
@@ -767,6 +785,7 @@ class ParetoNavigator(InteractiveMethod):
 if __name__ == "__main__":
     from desdeo_problem.Objective import _ScalarObjective
     from desdeo_problem import variable_builder
+    
     # Example from article
 
     # Objectives
@@ -841,6 +860,8 @@ if __name__ == "__main__":
         objectives=objectives, variables=variables, constraints=constraints
     )
 
+    eps = 0.15 # A close enough value compared to the article
+    it = 150 # how many iterations of each preference info should we navigate
     # discrete problem
     decision_variables = np.array([
         [0.4, 5.5],
@@ -873,7 +894,7 @@ if __name__ == "__main__":
 
     request.response = {
         "preferred_solution": 3,
-        "speed": 2,
+        "speed": 1,
     }
 
     request = method.iterate(request)
@@ -884,12 +905,13 @@ if __name__ == "__main__":
         # 'reference_point': np.array([ideal[0], ideal[1], nadir[2]]),
         "classification": ["<", "<", ">"],
     }
-
-    for i in range(50):
+    
+    for i in range(it):
         request = method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
-        if np.all(np.abs(cur_sol - np.array([0.35, -0.51, -26.26])) < 0.3):
+        if np.all(np.abs(cur_sol - np.array([0.35, -0.51, -26.26])) < eps):
+            print("Achieved close enough value compared to article")
             break
 
     request.response = {
@@ -897,11 +919,12 @@ if __name__ == "__main__":
         #'reference_point': np.array([ideal[0], nadir[1], cur_sol[2]]),
     }
 
-    for i in range(50):
+    for i in range(it):
         request= method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
-        if np.all(np.abs(cur_sol - np.array([-0.64, 1.82, -25.95])) < 0.3):
+        if np.all(np.abs(cur_sol - np.array([-0.64, 1.82, -25.95])) < eps):
+            print("Achieved close enough value compared to article")
             break
 
 
@@ -909,11 +932,12 @@ if __name__ == "__main__":
         "classification": [">", "<", "<"],
     }
 
-    for i in range(50):
-        reques= method.iterate(request)
+    for i in range(it):
+        request = method.iterate(request)
         cur_sol = request.content["current_solution"]
         print(cur_sol)
-        if np.all(np.abs(cur_sol - np.array([-0.32, 2.33, -27.85])) < 0.3):
+        if np.all(np.abs(cur_sol - np.array([-0.32, -2.33, -27.85])) < eps):
+            print("Achieved close enough value compared to article")
             break
 
     request.response = {
@@ -966,7 +990,6 @@ if __name__ == "__main__":
     convex_hull = ConvexHull(method._pareto_optimal_solutions)
 
     #Plotting the convex hull
-    from matplotlib.patches import Polygon
     for s in convex_hull.simplices:
         s = np.append(s, s[0])  # Here we cycle back to the first coordinate
         ax.plot(
@@ -977,4 +1000,3 @@ if __name__ == "__main__":
         )
 
     plt.show()
-
