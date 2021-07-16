@@ -36,16 +36,19 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx_autodoc_typehints",
-    "sphinx.ext.autosummary",
     "sphinx.ext.autosectionlabel",
-    "sphinx_automodapi.automodapi",
     "sphinx.ext.graphviz",
     "sphinx.ext.viewcode",
     "recommonmark",
     "nbsphinx",
     "sphinx.ext.mathjax",
+    "autoapi.extension",
 ]
 numpydoc_show_class_members = False
+
+# autoapi
+autoapi_type = "python"
+autoapi_dirs = ["../desdeo_mcdm/"]
 
 # autodoc_default_flags = ["members"]
 # autosummary_generate = True
@@ -59,6 +62,7 @@ numpydoc_show_class_members = False
 #     "show-inheritance": None,
 #     "exclude-members": ("_abc_cache,_abc_negative_cache," + "_abc_negative_cache_version,_abc_registry"),
 # }
+# autodoc_mock_imports = ["hvwfg"]
 
 source_suffix = [".rst", ".md"]
 

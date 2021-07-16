@@ -5,7 +5,7 @@ import logging
 from typing import Callable, Optional, Tuple, Union
 
 import numpy as np
-from desdeo_problem.Problem import MOProblem
+from desdeo_problem.problem import MOProblem
 from desdeo_tools.scalarization.ASF import ASFBase, PointMethodASF
 from desdeo_tools.scalarization.Scalarizer import Scalarizer
 from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
@@ -193,7 +193,7 @@ def solve_pareto_front_representation_general(
         The objective evaluator should be defined such that minimization is
         expected in each of the objectives.
     """
-    if ideal is None or nadir is None:
+    if np.all(np.isinf(ideal)) or np.all(np.isinf(nadir)):
         # compure ideal and nadir using payoff table
         ideal, nadir = payoff_table_method_general(
             objective_evaluator, n_of_objectives, variable_bounds, constraint_evaluator,
@@ -299,64 +299,62 @@ def solve_pareto_front_representation(
     else:
         constraints = None
 
+    def evaluator(xs):
+        return problem.evaluate(xs).objectives
+
     var_values, obj_values = solve_pareto_front_representation_general(
-        lambda x: problem.evaluate(x).objectives,
+        evaluator,
         problem.n_of_objectives,
         problem.get_variable_bounds(),
         step,
         eps,
-        problem.ideal * problem._max_multiplier,
-        problem.nadir * problem._max_multiplier,
+        problem.ideal,
+        problem.nadir,
         constraints,
         solver_method,
     )
 
-    return var_values, obj_values * problem._max_multiplier
+    return var_values, obj_values
 
 
 if __name__ == "__main__":
-    # # create the problem
-    # def f_1(x):
-    #     res = 4.07 + 2.27 * x[:, 0]
-    #     return -res
+    from desdeo_problem.problem import MOProblem, ScalarConstraint, _ScalarObjective, variable_builder
 
-    # def f_2(x):
-    #     res = (
-    #         2.60
-    #         + 0.03 * x[:, 0]
-    #         + 0.02 * x[:, 1]
-    #         + 0.01 / (1.39 - x[:, 0] ** 2)
-    #         + 0.30 / (1.39 - x[:, 1] ** 2)
-    #     )
-    #     return -res
+    # create the problem
+    def f_1(x):
+        res = 4.07 + 2.27 * x[:, 0]
+        return -res
 
-    # def f_3(x):
-    #     res = 8.21 - 0.71 / (1.09 - x[:, 0] ** 2)
-    #     return -res
+    def f_2(x):
+        res = 2.60 + 0.03 * x[:, 0] + 0.02 * x[:, 1] + 0.01 / (1.39 - x[:, 0] ** 2) + 0.30 / (1.39 - x[:, 1] ** 2)
+        return -res
 
-    # def f_4(x):
-    #     res = 0.96 - 0.96 / (1.09 - x[:, 1] ** 2)
-    #     return -res
+    def f_3(x):
+        res = 8.21 - 0.71 / (1.09 - x[:, 0] ** 2)
+        return -res
 
-    # def f_5(x):
-    #     return np.max([np.abs(x[:, 0] - 0.65), np.abs(x[:, 1] - 0.65)], axis=0)
+    def f_4(x):
+        res = 0.96 - 0.96 / (1.09 - x[:, 1] ** 2)
+        return -res
 
-    # def c_1(x, f=None):
-    #     x = x.squeeze()
-    #     return (x[0] + x[1]) - 0.2
+    def f_5(x):
+        return np.max([np.abs(x[:, 0] - 0.65), np.abs(x[:, 1] - 0.65)], axis=0)
 
-    # f1 = _ScalarObjective(name="f1", evaluator=f_1)
-    # f2 = _ScalarObjective(name="f2", evaluator=f_2)
-    # f3 = _ScalarObjective(name="f3", evaluator=f_3)
-    # f4 = _ScalarObjective(name="f4", evaluator=f_4)
-    # f5 = _ScalarObjective(name="f5", evaluator=f_5)
-    # c1 = ScalarConstraint("c1", 2, 5, evaluator=c_1)
-    # varsl = variable_builder(
-    #     ["x_1", "x_2"],
-    #     initial_values=[0.5, 0.5],
-    #     lower_bounds=[0.3, 0.3],
-    #     upper_bounds=[1.0, 1.0],
-    # )
-    # problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5],)
+    def c_1(x, f=None):
+        x = x.squeeze()
+        return (x[0] + x[1]) - 0.2
 
-    pass
+    f1 = _ScalarObjective(name="f1", evaluator=f_1)
+    f2 = _ScalarObjective(name="f2", evaluator=f_2)
+    f3 = _ScalarObjective(name="f3", evaluator=f_3)
+    f4 = _ScalarObjective(name="f4", evaluator=f_4)
+    f5 = _ScalarObjective(name="f5", evaluator=f_5)
+    c1 = ScalarConstraint("c1", 2, 5, evaluator=c_1)
+    varsl = variable_builder(
+        ["x_1", "x_2"], initial_values=[0.5, 0.5], lower_bounds=[0.3, 0.3], upper_bounds=[1.0, 1.0],
+    )
+    problem = MOProblem(variables=varsl, objectives=[f1, f2, f3, f4, f5],)
+
+    ideal, nadir = payoff_table_method(problem)
+
+    po_front = solve_pareto_front_representation(problem)

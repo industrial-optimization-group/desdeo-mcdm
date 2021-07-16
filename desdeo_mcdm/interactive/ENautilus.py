@@ -1,11 +1,10 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_tools.interaction.request import BaseRequest
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
-
-from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
 
 class ENautilusException(Exception):
@@ -131,22 +130,22 @@ class ENautilus(InteractiveMethod):
 
         Args:
             pareto_front (np.ndarray): A two dimensional numpy array
-            representing a Pareto front with objective vectors on each of its
-            rows.
+                representing a Pareto front with objective vectors on each of its
+                rows.
             ideal (np.ndarray): The ideal objective vector of the problem
-            being represented by the Pareto front.
+                being represented by the Pareto front.
             nadir (np.ndarray): The nadir objective vector of the problem
-            being represented by the Pareto front.
+                being represented by the Pareto front.
             objective_names (Optional[List[str]], optional): Names of the
-            objectives. List must match the number of columns in
-            pareto_front. Defaults to 'f1', 'f2', 'f3', ...
+                objectives. List must match the number of columns in
+                pareto_front. Defaults to 'f1', 'f2', 'f3', ...
             minimize (Optional[List[int]], optional): Multipliers for each
-            objective. '-1' indicates maximization and '1' minimization.
-            Defaults to all objective values being minimized.
+                objective. '-1' indicates maximization and '1' minimization.
+                Defaults to all objective values being minimized (deprecated!).
 
         Raises:
             ENavigatorException: One or more dimension mismatches are
-            encountered among the supplies arguments.
+                encountered among the supplies arguments.
         """
         if not pareto_front.ndim == 2:
             raise ENautilusException(
@@ -282,14 +281,14 @@ class ENautilus(InteractiveMethod):
         Args:
             pareto_front (np.ndarray): The Pareto front.
             subset_indices (List[int]): A list of indices representing the
-            subset of the points on the Pareto front for which the
-            representative points should be calculated.
+                subset of the points on the Pareto front for which the
+                representative points should be calculated.
             n_points (int): The number of representative points to be calculated.
 
         Returns:
             np.ndarray: A 2D array of the most representative points. If the
-            subset of Pareto efficient points is less than n_points, returns
-            the subset of the Pareto front.
+                subset of Pareto efficient points is less than n_points, returns
+                the subset of the Pareto front.
         """
         if len(np.atleast_1d(subset_indices)) > n_points:
             kmeans = KMeans(n_clusters=n_points)

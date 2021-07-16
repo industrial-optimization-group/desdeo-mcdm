@@ -1,29 +1,22 @@
 """
 NAUTILUS 1
 """
-from typing import Dict, List, Optional, Union, Callable
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
-
-from desdeo_problem.Variable import variable_builder
-from desdeo_problem.Objective import VectorObjective, _ScalarObjective
-from desdeo_problem.Problem import MOProblem
-from desdeo_tools.interaction.request import BaseRequest
-from desdeo_tools.scalarization import ReferencePointASF
-from desdeo_tools.scalarization import EpsilonConstraintMethod as ECM
-from desdeo_tools.scalarization.Scalarizer import Scalarizer
-from desdeo_tools.solver.ScalarSolver import ScalarMinimizer, ScalarMethod
-
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-
+from desdeo_problem.problem import MOProblem, VectorObjective, _ScalarObjective, variable_builder
+from desdeo_tools.interaction.request import BaseRequest
+from desdeo_tools.scalarization import EpsilonConstraintMethod as ECM
+from desdeo_tools.scalarization import ReferencePointASF
+from desdeo_tools.scalarization.Scalarizer import Scalarizer
+from desdeo_tools.solver.ScalarSolver import ScalarMethod, ScalarMinimizer
 from scipy.optimize import differential_evolution
 
 
-def validate_response(n_objectives: int,
-                      z_current: np.ndarray,
-                      nadir: np.ndarray,
-                      response: Dict,
-                      first_iteration_bool: bool) -> None:
+def validate_response(
+    n_objectives: int, z_current: np.ndarray, nadir: np.ndarray, response: Dict, first_iteration_bool: bool
+) -> None:
     """
     Validate decision maker's response.
 
@@ -80,25 +73,26 @@ def validate_preferences(n_objectives: int, response: Dict) -> None:
         raise NautilusException("'preference_info entry missing")
     if response["preference_method"] == 1:  # ranks
         if len(response["preference_info"]) < n_objectives:
-            msg = "Number of ranks ({}) do not match the number of objectives '({})." \
-                .format(len(response["preference_info"]), n_objectives)
+            msg = "Number of ranks ({}) do not match the number of objectives '({}).".format(
+                len(response["preference_info"]), n_objectives
+            )
             raise NautilusException(msg)
         elif not (1 <= max(response["preference_info"]) <= n_objectives):
             msg = "The minimum index of importance must be greater or equal "
             "to 1 and the maximum index of importance must be less "
             "than or equal to the number of objectives in the "
-            "problem, which is {}. Check the indices {}" \
-                .format(n_objectives, response["preference_info"])
+            "problem, which is {}. Check the indices {}".format(n_objectives, response["preference_info"])
             raise NautilusException(msg)
     elif response["preference_method"] == 2:  # percentages
         if len(response["preference_info"]) < n_objectives:
-            msg = "Number of given percentages ({}) do not match the number of objectives '({})." \
-                .format(len(response["preference_info"]), n_objectives)
+            msg = "Number of given percentages ({}) do not match the number of objectives '({}).".format(
+                len(response["preference_info"]), n_objectives
+            )
             raise NautilusException(msg)
         elif np.sum(response["preference_info"]) != 100:
-            msg = (
-                "The sum of the percentages must be 100. Current sum" " is {}."
-            ).format(np.sum(response["preference_info"]))
+            msg = ("The sum of the percentages must be 100. Current sum" " is {}.").format(
+                np.sum(response["preference_info"])
+            )
             raise NautilusException(msg)
 
 
@@ -190,36 +184,32 @@ class NautilusInitialRequest(BaseRequest):
 
         """
 
-        validate_response(self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response,
-                          first_iteration_bool=True)
+        validate_response(
+            self.n_objectives, z_current=self._nadir, nadir=self._nadir, response=response, first_iteration_bool=True
+        )
         self._response = response
 
 
 class NautilusRequest(BaseRequest):
     """
     A request class to handle the Decision maker's preferences after the first iteration round.
+
+    Args:
+        z_current (np.ndarray): Current iteration point.
+        nadir (np.ndarray): Nadir point.
+        lower_bounds (np.ndarray): Lower bounds for objective functions for next iteration.
+        upper_bounds (np.ndarray): Upper bounds for objective functions for next iteration.
+        distance (np.ndarray): Closeness to Pareto optimal front.
     """
 
     def __init__(
-            self,
-            z_current: np.ndarray,
-            nadir: np.ndarray,
-            lower_bounds: np.ndarray,
-            upper_bounds: np.ndarray,
-            distance: np.ndarray,
+        self,
+        z_current: np.ndarray,
+        nadir: np.ndarray,
+        lower_bounds: np.ndarray,
+        upper_bounds: np.ndarray,
+        distance: np.ndarray,
     ):
-        """
-        Initialize request with current iterations's solution process information.
-
-        Args:
-            z_current (np.ndarray): Current iteration point.
-            nadir (np.ndarray): Nadir point.
-            lower_bounds (np.ndarray): Lower bounds for objective functions for next iteration.
-            upper_bounds (np.ndarray): Upper bounds for objective functions for next iteration.
-            distance (np.ndarray): Closeness to Pareto optimal front.
-
-        """
-
         self._n_objectives = len(nadir)
         self._z_current = z_current
         self._nadir = nadir
@@ -344,13 +334,13 @@ class Nautilus(InteractiveMethod):
     """
 
     def __init__(
-            self,
-            problem: MOProblem,
-            ideal: np.ndarray,
-            nadir: np.ndarray,
-            epsilon: float = 1e-6,
-            objective_names: Optional[List[str]] = None,
-            minimize: Optional[List[int]] = None,
+        self,
+        problem: MOProblem,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
+        epsilon: float = 1e-6,
+        objective_names: Optional[List[str]] = None,
+        minimize: Optional[List[int]] = None,
     ):
 
         if not ideal.shape == nadir.shape:
@@ -425,7 +415,7 @@ class Nautilus(InteractiveMethod):
         self._method_de: ScalarMethod = ScalarMethod(
             lambda x, _, **y: differential_evolution(x, **y),
             method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-            use_scipy=True
+            use_scipy=True,
         )
 
     def start(self) -> NautilusInitialRequest:
@@ -440,7 +430,7 @@ class Nautilus(InteractiveMethod):
         return NautilusInitialRequest.init_with_method(self)
 
     def iterate(
-            self, request: Union[NautilusInitialRequest, NautilusRequest, NautilusStopRequest]
+        self, request: Union[NautilusInitialRequest, NautilusRequest, NautilusStopRequest]
     ) -> Union[NautilusRequest, NautilusStopRequest]:
         """
         Perform the next logical iteration step based on the given request type.
@@ -492,8 +482,9 @@ class Nautilus(InteractiveMethod):
         # set preference information
         self._preference_method: int = request.response["preference_method"]
         self._preference_info: np.ndarray = request.response["preference_info"]
-        self._preferential_factors = self.calculate_preferential_factors(self._preference_method, self._preference_info,
-                                                                         self._nadir, self._utopian)
+        self._preferential_factors = self.calculate_preferential_factors(
+            self._preference_method, self._preference_info, self._nadir, self._utopian
+        )
 
         # set reference point, initial values for decision variables, lower and upper bounds for objective functions
         self._q = self._zs[self._step_number - 1]
@@ -503,34 +494,51 @@ class Nautilus(InteractiveMethod):
         self._upper_bounds[self._step_number] = self._nadir
 
         # solve the ASF-problem
-        result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian, self._objectives,
-                                self._variable_bounds, method=self._method_de)
+        result = self.solve_asf(
+            self._q,
+            x0,
+            self._preferential_factors,
+            self._nadir,
+            self._utopian,
+            self._objectives,
+            self._variable_bounds,
+            method=self._method_de,
+        )
 
         # update current solution and objective function values
         self._xs[self._step_number] = result["x"]
         self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
         # calculate next iteration point
-        self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
-                                                                     self._zs[self._step_number - 1],
-                                                                     self._fs[self._step_number])
+        self._zs[self._step_number] = self.calculate_iteration_point(
+            self._n_iterations_left, self._zs[self._step_number - 1], self._fs[self._step_number]
+        )
         # calculate new bounds and store the information
-        new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
-                                                 self._zs[self._step_number], self._variable_bounds,
-                                                 self._constraints, None)
+        new_lower_bounds = self.calculate_bounds(
+            self._objectives,
+            len(self._objective_names),
+            x0,
+            self._zs[self._step_number],
+            self._variable_bounds,
+            self._constraints,
+            None,
+        )
 
         self._lower_bounds[self._step_number + 1] = new_lower_bounds
         self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
 
         # calculate distance from current iteration point to Pareto optimal set
-        self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                              self._nadir,
-                                                              self._fs[self._step_number])
+        self._ds[self._step_number] = self.calculate_distance(
+            self._zs[self._step_number], self._nadir, self._fs[self._step_number]
+        )
 
         # return the information from iteration round to be shown to the DM.
         return NautilusRequest(
-            self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
-            self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+            self._zs[self._step_number],
+            self._nadir,
+            self._lower_bounds[self._step_number + 1],
+            self._upper_bounds[self._step_number + 1],
+            self._ds[self._step_number],
         )
 
     def handle_request(self, request: NautilusRequest) -> Union[NautilusRequest, NautilusStopRequest]:
@@ -558,10 +566,12 @@ class Nautilus(InteractiveMethod):
                 self._xs = np.array(np.concatenate((self._xs, extra_space), axis=None), dtype=object)
                 self._fs = np.array(np.concatenate((self._fs, extra_space), axis=None), dtype=object)
                 self._ds = np.array(np.concatenate((self._ds, extra_space), axis=None), dtype=object)
-                self._lower_bounds = np.array(np.concatenate((self._lower_bounds, extra_space), axis=None),
-                                              dtype=object)
-                self._upper_bounds = np.array(np.concatenate((self._upper_bounds, extra_space), axis=None),
-                                              dtype=object)
+                self._lower_bounds = np.array(
+                    np.concatenate((self._lower_bounds, extra_space), axis=None), dtype=object
+                )
+                self._upper_bounds = np.array(
+                    np.concatenate((self._upper_bounds, extra_space), axis=None), dtype=object
+                )
 
             self._n_iterations_left = resp["n_iterations"]
 
@@ -588,16 +598,23 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
-                                                                                 self._preference_info,
-                                                                                 self._nadir, self._utopian)
+                self._preferential_factors = self.calculate_preferential_factors(
+                    self._preference_method, self._preference_info, self._nadir, self._utopian
+                )
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian,
-                                        self._objectives,
-                                        self._variable_bounds, method=self._method_de)
+                result = self.solve_asf(
+                    self._q,
+                    x0,
+                    self._preferential_factors,
+                    self._nadir,
+                    self._utopian,
+                    self._objectives,
+                    self._variable_bounds,
+                    method=self._method_de,
+                )
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
@@ -605,28 +622,36 @@ class Nautilus(InteractiveMethod):
 
             # continue from step 3
             # calculate next iteration point
-            self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
-                                                                         self._zs[self._step_number - 1],
-                                                                         self._fs[self._step_number])
+            self._zs[self._step_number] = self.calculate_iteration_point(
+                self._n_iterations_left, self._zs[self._step_number - 1], self._fs[self._step_number]
+            )
 
             # calculate new bounds and store the information
-            new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
-                                                     self._problem.get_variable_upper_bounds() / 2,
-                                                     self._zs[self._step_number], self._variable_bounds,
-                                                     self._constraints, None)
+            new_lower_bounds = self.calculate_bounds(
+                self._objectives,
+                len(self._objective_names),
+                self._problem.get_variable_upper_bounds() / 2,
+                self._zs[self._step_number],
+                self._variable_bounds,
+                self._constraints,
+                None,
+            )
 
             self._lower_bounds[self._step_number + 1] = new_lower_bounds
             self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
 
             # calculate distance from current iteration point to Pareto optimal set
-            self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                                  self._nadir,
-                                                                  self._fs[self._step_number])
+            self._ds[self._step_number] = self.calculate_distance(
+                self._zs[self._step_number], self._nadir, self._fs[self._step_number]
+            )
 
             # return the information from iteration round to be shown to the DM.
             return NautilusRequest(
-                self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
-                self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+                self._zs[self._step_number],
+                self._nadir,
+                self._lower_bounds[self._step_number + 1],
+                self._upper_bounds[self._step_number + 1],
+                self._ds[self._step_number],
             )
 
         # take a step back...
@@ -639,23 +664,31 @@ class Nautilus(InteractiveMethod):
                 self._zs[self._step_number] = 0.5 * self._zs[self._step_number] + 0.5 * self._zs[self._step_number - 1]
 
                 # calculate new bounds and store the information
-                new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names),
-                                                         self._problem.get_variable_upper_bounds() / 2,
-                                                         self._zs[self._step_number], self._variable_bounds,
-                                                         self._constraints, None)
+                new_lower_bounds = self.calculate_bounds(
+                    self._objectives,
+                    len(self._objective_names),
+                    self._problem.get_variable_upper_bounds() / 2,
+                    self._zs[self._step_number],
+                    self._variable_bounds,
+                    self._constraints,
+                    None,
+                )
 
                 self._lower_bounds[self._step_number + 1] = new_lower_bounds
                 self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
 
                 # calculate distance from current iteration point to Pareto optimal set
-                self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                                      self._nadir,
-                                                                      self._fs[self._step_number])
+                self._ds[self._step_number] = self.calculate_distance(
+                    self._zs[self._step_number], self._nadir, self._fs[self._step_number]
+                )
 
                 # return the information from iteration round to be shown to the DM.
                 return NautilusRequest(
-                    self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
-                    self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+                    self._zs[self._step_number],
+                    self._nadir,
+                    self._lower_bounds[self._step_number + 1],
+                    self._upper_bounds[self._step_number + 1],
+                    self._ds[self._step_number],
                 )
 
             # ... and use new preferences
@@ -664,47 +697,64 @@ class Nautilus(InteractiveMethod):
                 # set preference information
                 self._preference_method: int = resp["preference_method"]
                 self._preference_info: np.ndarray = resp["preference_info"]
-                self._preferential_factors = self.calculate_preferential_factors(self._preference_method,
-                                                                                 self._preference_info,
-                                                                                 self._nadir, self._utopian)
+                self._preferential_factors = self.calculate_preferential_factors(
+                    self._preference_method, self._preference_info, self._nadir, self._utopian
+                )
 
                 # set reference point, initial values for decision variables and solve the problem
                 self._q = self._zs[self._step_number - 1]
                 x0 = self._problem.get_variable_upper_bounds() / 2
-                result = self.solve_asf(self._q, x0, self._preferential_factors, self._nadir, self._utopian,
-                                        self._objectives,
-                                        self._variable_bounds, method=self._method_de)
+                result = self.solve_asf(
+                    self._q,
+                    x0,
+                    self._preferential_factors,
+                    self._nadir,
+                    self._utopian,
+                    self._objectives,
+                    self._variable_bounds,
+                    method=self._method_de,
+                )
 
                 # update current solution and objective function values
                 self._xs[self._step_number] = result["x"]
                 self._fs[self._step_number] = self._objectives(self._xs[self._step_number])[0]
 
                 # calculate next iteration point
-                self._zs[self._step_number] = self.calculate_iteration_point(self._n_iterations_left,
-                                                                             self._zs[self._step_number - 1],
-                                                                             self._fs[self._step_number])
+                self._zs[self._step_number] = self.calculate_iteration_point(
+                    self._n_iterations_left, self._zs[self._step_number - 1], self._fs[self._step_number]
+                )
 
                 # calculate new bounds and store the information
-                new_lower_bounds = self.calculate_bounds(self._objectives, len(self._objective_names), x0,
-                                                         self._zs[self._step_number], self._variable_bounds,
-                                                         self._constraints, None)
+                new_lower_bounds = self.calculate_bounds(
+                    self._objectives,
+                    len(self._objective_names),
+                    x0,
+                    self._zs[self._step_number],
+                    self._variable_bounds,
+                    self._constraints,
+                    None,
+                )
 
                 self._lower_bounds[self._step_number + 1] = new_lower_bounds
                 self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
 
                 # calculate distance from current iteration point to Pareto optimal set
-                self._ds[self._step_number] = self.calculate_distance(self._zs[self._step_number],
-                                                                      self._nadir,
-                                                                      self._fs[self._step_number])
+                self._ds[self._step_number] = self.calculate_distance(
+                    self._zs[self._step_number], self._nadir, self._fs[self._step_number]
+                )
 
                 # return the information from iteration round to be shown to the DM.
                 return NautilusRequest(
-                    self._zs[self._step_number], self._nadir, self._lower_bounds[self._step_number + 1],
-                    self._upper_bounds[self._step_number + 1], self._ds[self._step_number]
+                    self._zs[self._step_number],
+                    self._nadir,
+                    self._lower_bounds[self._step_number + 1],
+                    self._upper_bounds[self._step_number + 1],
+                    self._ds[self._step_number],
                 )
 
-    def calculate_preferential_factors(self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray,
-                                       utopian: np.ndarray) -> np.ndarray:
+    def calculate_preferential_factors(
+        self, pref_method: int, pref_info: np.ndarray, nadir: np.ndarray, utopian: np.ndarray
+    ) -> np.ndarray:
         """
         Calculate preferential factors based on the Decision maker's preference information. These preferential
         factors are used as weights for objectives when solving an Achievement scalarizing function. The Decision maker
@@ -757,16 +807,17 @@ class Nautilus(InteractiveMethod):
             delta_q = pref_info / 100
             return np.array([1 / (d_i * (n_i - u_i)) for d_i, n_i, u_i in zip(delta_q, nadir, utopian)])
 
-    def solve_asf(self,
-                  ref_point: np.ndarray,
-                  x0: np.ndarray,
-                  preferential_factors: np.ndarray,
-                  nadir: np.ndarray,
-                  utopian: np.ndarray,
-                  objectives: Callable,
-                  variable_bounds: Optional[np.ndarray],
-                  method: Union[ScalarMethod, str, None]
-                  ) -> dict:
+    def solve_asf(
+        self,
+        ref_point: np.ndarray,
+        x0: np.ndarray,
+        preferential_factors: np.ndarray,
+        nadir: np.ndarray,
+        utopian: np.ndarray,
+        objectives: Callable,
+        variable_bounds: Optional[np.ndarray],
+        method: Union[ScalarMethod, str, None],
+    ) -> dict:
         """
         Solve Achievement scalarizing function.
 
@@ -792,9 +843,8 @@ class Nautilus(InteractiveMethod):
         # scalarize problem using reference point
         asf = ReferencePointASF(preferential_factors, nadir, utopian, rho=1e-6)
         asf_scalarizer = Scalarizer(
-            evaluator=objectives,
-            scalarizer=asf,
-            scalarizer_args={"reference_point": ref_point})
+            evaluator=objectives, scalarizer=asf, scalarizer_args={"reference_point": ref_point}
+        )
 
         # minimize
         minimizer = ScalarMinimizer(asf_scalarizer, variable_bounds, method=method)
@@ -816,9 +866,16 @@ class Nautilus(InteractiveMethod):
 
         return (((itn - 1) / itn) * z_prev) + ((1 / itn) * f_current)
 
-    def calculate_bounds(self, objectives: Callable, n_objectives: int, x0: np.ndarray, epsilons: np.ndarray,
-                         bounds: Union[np.ndarray, None], constraints: Optional[Callable],
-                         method: Union[ScalarMethod, str, None]) -> np.ndarray:
+    def calculate_bounds(
+        self,
+        objectives: Callable,
+        n_objectives: int,
+        x0: np.ndarray,
+        epsilons: np.ndarray,
+        bounds: Union[np.ndarray, None],
+        constraints: Optional[Callable],
+        method: Union[ScalarMethod, str, None],
+    ) -> np.ndarray:
         """
         Calculate the new bounds using Epsilon constraint method.
 
@@ -841,21 +898,20 @@ class Nautilus(InteractiveMethod):
         method_e: ScalarMethod = ScalarMethod(
             lambda x, _, **y: differential_evolution(x, **y),
             method_args={"disp": False, "polish": False, "tol": 0.000001, "popsize": 10, "maxiter": 50000},
-            use_scipy=True
+            use_scipy=True,
         )
 
         # solve new lower bounds for each objective
         for i in range(n_objectives):
-            eps = ECM.EpsilonConstraintMethod(objectives,
-                                              i,
-                                              np.array([val for ind, val in enumerate(epsilons) if ind != i]),
-                                              constraints=constraints
-                                              )
+            eps = ECM.EpsilonConstraintMethod(
+                objectives, i, np.array([val for ind, val in enumerate(epsilons) if ind != i]), constraints=constraints
+            )
             cons_evaluate = eps.evaluate_constraints
             scalarized_objective = Scalarizer(objectives, eps)
 
-            minimizer = ScalarMinimizer(scalarized_objective, bounds, constraint_evaluator=cons_evaluate,
-                                        method=method_e)
+            minimizer = ScalarMinimizer(
+                scalarized_objective, bounds, constraint_evaluator=cons_evaluate, method=method_e
+            )
             res = minimizer.minimize(x0)
 
             # store objective function values as new lower bounds
@@ -877,8 +933,9 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        dist = (np.linalg.norm(np.atleast_2d(z_current) - nadir, ord=2, axis=1)) \
-               / (np.linalg.norm(np.atleast_2d(f_current) - nadir, ord=2, axis=1))
+        dist = (np.linalg.norm(np.atleast_2d(z_current) - nadir, ord=2, axis=1)) / (
+            np.linalg.norm(np.atleast_2d(f_current) - nadir, ord=2, axis=1)
+        )
         return dist * 100
 
 
@@ -890,26 +947,26 @@ if __name__ == "__main__":
         xs = np.atleast_2d(xs)
         return -4.07 - 2.27 * xs[:, 0]
 
-
     def f2(xs):
         xs = np.atleast_2d(xs)
-        return -2.60 - 0.03 * xs[:, 0] - 0.02 * xs[:, 1] - (0.01 / (1.39 - xs[:, 0] ** 2)) - (
-                0.30 / (1.39 - xs[:, 1] ** 2))
-
+        return (
+            -2.60
+            - 0.03 * xs[:, 0]
+            - 0.02 * xs[:, 1]
+            - (0.01 / (1.39 - xs[:, 0] ** 2))
+            - (0.30 / (1.39 - xs[:, 1] ** 2))
+        )
 
     def f3(xs):
         xs = np.atleast_2d(xs)
         return -8.21 + (0.71 / (1.09 - xs[:, 0] ** 2))
 
-
     def f4(xs):
         xs = np.atleast_2d(xs)
         return -0.96 + (0.96 / (1.09 - xs[:, 1] ** 2))
 
-
     def objectives(xs):
         return np.stack((f1(xs), f2(xs), f3(xs), f4(xs))).T
-
 
     obj1 = _ScalarObjective("obj1", f1)
     obj2 = _ScalarObjective("obj2", f2)
@@ -930,7 +987,7 @@ if __name__ == "__main__":
     # problem
     prob = MOProblem(objectives=[obj1, obj2, obj3, obj4], variables=variables)  # objectives "seperately"
 
-    ideal = np.array([-6.34, -3.44487179, -7.5, 0.])
+    ideal = np.array([-6.34, -3.44487179, -7.5, 0.0])
     nadir = np.array([-4.751, -2.86054116, -0.32111111, 9.70666666])
     print("Ideal: ", ideal)
     print("Nadir: ", nadir)

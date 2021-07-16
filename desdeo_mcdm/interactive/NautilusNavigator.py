@@ -132,6 +132,24 @@ class NautilusNavigatorException(Exception):
 class NautilusNavigator(InteractiveMethod):
     """Implementations of the NAUTILUS Navigator algorithm.
 
+    Args:
+        pareto_front (np.ndarray): A two dimensional numpy array
+        representing a Pareto front with objective vectors on each of its
+        rows.
+        ideal (np.ndarray): The ideal objective vector of the problem
+        being represented by the Pareto front.
+        nadir (np.ndarray): The nadir objective vector of the problem
+        being represented by the Pareto front.
+        objective_names (Optional[List[str]], optional): Names of the
+        objectives. List must match the number of columns in
+        pareto_front. Defaults to 'f1', 'f2', 'f3', ...
+        minimize (Optional[List[int]], optional): Multipliers for each
+        objective. '-1' indicates maximization and '1' minimization.
+        Defaults to all objective values being minimized.
+
+    Raises:
+        NautilusNavigatorException: One or more dimension mismatches are
+        encountered among the supplies arguments.
     """
 
     def __init__(
@@ -142,27 +160,6 @@ class NautilusNavigator(InteractiveMethod):
         objective_names: Optional[List[str]] = None,
         minimize: Optional[List[int]] = None,
     ):
-        """
-
-        Args:
-            pareto_front (np.ndarray): A two dimensional numpy array
-            representing a Pareto front with objective vectors on each of its
-            rows.
-            ideal (np.ndarray): The ideal objective vector of the problem
-            being represented by the Pareto front.
-            nadir (np.ndarray): The nadir objective vector of the problem
-            being represented by the Pareto front.
-            objective_names (Optional[List[str]], optional): Names of the
-            objectives. List must match the number of columns in
-            pareto_front. Defaults to 'f1', 'f2', 'f3', ...
-            minimize (Optional[List[int]], optional): Multipliers for each
-            objective. '-1' indicates maximization and '1' minimization.
-            Defaults to all objective values being minimized.
-
-        Raises:
-            NautilusNavigatorException: One or more dimension mismatches are
-            encountered among the supplies arguments.
-        """
         if not pareto_front.ndim == 2:
             raise NautilusNavigatorException(
                 "The supplied Pareto front should be a two dimensional array. Found "
@@ -301,27 +298,27 @@ class NautilusNavigator(InteractiveMethod):
             ref_point (np.ndarray): A reference point given by a decision maker.
             speed (int): An integer value between 1-5 indicating the navigation speed.
             go_to_previous (bool): If True, the parameters indicate the state
-            of a previous state, and the request is handled accordingly.
+                of a previous state, and the request is handled accordingly.
             stop (bool): If the navigation should stop. If True, self.update return None.
             step_number (Optional[int], optional): Current step number, or
-            previous step number if go_to_previous is True. Defaults to None.
+                previous step number if go_to_previous is True. Defaults to None.
             nav_point (Optional[np.ndarray], optional): The current
-            navigation point. Relevant if go_to_previous is True. Defaults to
-            None.
+                navigation point. Relevant if go_to_previous is True. Defaults to
+                None.
             lower_bounds (Optional[np.ndarray], optional): Lower bounds of
-            the reachable objective vector values. Relevant if go_to_previous
-            is True. Defaults to None.
+                the reachable objective vector values. Relevant if go_to_previous
+                is True. Defaults to None.
             upper_bounds (Optional[np.ndarray], optional): Upper bounds of
-            the reachable objective vector values. Relevant if go_to_previous
-            is True. Defaults to None.
+                the reachable objective vector values. Relevant if go_to_previous
+                is True. Defaults to None.
             reachable_idx (Optional[List[int]], optional): Indices of the
-            reachable Pareto optimal solutions. Relevant if go_to_previous is
-            True. Defaults to None.
+                reachable Pareto optimal solutions. Relevant if go_to_previous is
+                True. Defaults to None.
             distance (Optional[float], optional): Distance to the Pareto
-            optimal front. Relevant if go_to_previous is True. Defaults to
-            None.
+                optimal front. Relevant if go_to_previous is True. Defaults to
+                None.
             steps_remaining (Optional[int], optional): Remaining steps in the
-            navigation. Relevant if go_to_previous is True. Defaults to None.
+                navigation. Relevant if go_to_previous is True. Defaults to None.
 
         Returns:
             NautilusNavigatorRequest: Some of the given parameters are erroneous.
@@ -405,7 +402,12 @@ class NautilusNavigator(InteractiveMethod):
         return reachable_idx
 
     def solve_nautilus_asf_problem(
-        self, pareto_f: np.ndarray, subset_indices: List[int], ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,
+        self,
+        pareto_f: np.ndarray,
+        subset_indices: List[int],
+        ref_point: np.ndarray,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
     ) -> int:
         """Forms and solves the achievement scalarizing function to find the
         closest point on the Pareto optimal front to the given reference
@@ -415,7 +417,7 @@ class NautilusNavigator(InteractiveMethod):
             pareto_f (np.ndarray): The whole Pareto optimal front.
             subset_indices ([type]): Indices of the currently reachable solutions.
             ref_point (np.ndarray): The reference point indicating a decision
-            maker's preference.
+                maker's preference.
             ideal (np.ndarray): Ideal point.
             nadir (np.ndarray): Nadir point.
 
@@ -433,7 +435,7 @@ class NautilusNavigator(InteractiveMethod):
 
         res = solver.minimize(tmp)
 
-        return res
+        return res["x"]
 
     def calculate_navigation_point(
         self, projection: np.ndarray, nav_point: np.ndarray, steps_remaining: int,
@@ -443,7 +445,7 @@ class NautilusNavigator(InteractiveMethod):
 
         Args:
             projection (np.ndarray): The point on the Pareto optimal front
-            closest to the preference point given by a decision maker.
+                closest to the preference point given by a decision maker.
             nav_point (np.ndarray): The previous navigation point.
             steps_remaining (int): How many steps are remaining in the navigation.
 

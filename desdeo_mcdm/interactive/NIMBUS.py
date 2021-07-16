@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_mcdm.utilities.solvers import payoff_table_method
-from desdeo_problem.Problem import DiscreteDataProblem, MOProblem
+from desdeo_problem.problem import DiscreteDataProblem, MOProblem
 from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
 from desdeo_tools.scalarization.ASF import AugmentedGuessASF, MaxOfTwoASF, PointMethodASF, SimpleASF, StomASF
 from desdeo_tools.scalarization.Scalarizer import DiscreteScalarizer, Scalarizer
@@ -1097,8 +1097,7 @@ if __name__ == "__main__":
     """
 
     import matplotlib.pyplot as plt
-    from desdeo_problem.Objective import _ScalarObjective
-    from desdeo_problem.Variable import variable_builder
+    from desdeo_problem.problem import _ScalarObjective, variable_builder
 
     def f_1(xs: np.ndarray):
         xs = np.atleast_2d(xs)

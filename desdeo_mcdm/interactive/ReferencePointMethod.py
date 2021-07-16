@@ -2,9 +2,7 @@ from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-from desdeo_problem.Objective import VectorObjective, _ScalarObjective
-from desdeo_problem.Problem import DiscreteDataProblem, MOProblem
-from desdeo_problem.Variable import variable_builder
+from desdeo_problem.problem import DiscreteDataProblem, MOProblem, VectorObjective, _ScalarObjective, variable_builder
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import DiscreteScalarizer, Scalarizer
@@ -32,8 +30,6 @@ def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np
         ref_point (np.ndarray): Reference point.
         ideal (np.ndarray): Ideal vector.
         nadir (np.ndarray): Nadir vector.
-
-    Returns:
 
     Raises:
         RPMException: In case reference point is invalid.
@@ -111,19 +107,15 @@ class RPMInitialRequest(BaseRequest):
 class RPMRequest(BaseRequest):
     """
     A request class to handle the Decision Maker's preferences after the first iteration round.
+
+    Args:
+        f_current (np.ndarray): Current solution.
+        f_additionals (np.ndarray): Additional solutions.
+        ideal (np.ndarray): Idea vector.
+        nadir (np.ndarray): Nadir vector.
     """
 
     def __init__(self, f_current: np.ndarray, f_additionals: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,) -> None:
-        """
-        Initialize request with current iterations's solution process information.
-
-        Args:
-            f_current (np.ndarray): Current solution.
-            f_additionals (np.ndarray): Additional solutions.
-            ideal (np.ndarray): Idea vector.
-            nadir (np.ndarray): Nadir vector.
-        """
-
         self._f_current = f_current
         self._f_additionals = f_additionals
         self._ideal = ideal
