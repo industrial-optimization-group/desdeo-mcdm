@@ -1,11 +1,10 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 from desdeo_tools.interaction.request import BaseRequest
 from sklearn.cluster import KMeans
 from sklearn.metrics import pairwise_distances_argmin_min
-
-from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
 
 
 class ENautilusException(Exception):
@@ -282,14 +281,14 @@ class ENautilus(InteractiveMethod):
         Args:
             pareto_front (np.ndarray): The Pareto front.
             subset_indices (List[int]): A list of indices representing the
-            subset of the points on the Pareto front for which the
-            representative points should be calculated.
+                subset of the points on the Pareto front for which the
+                representative points should be calculated.
             n_points (int): The number of representative points to be calculated.
 
         Returns:
             np.ndarray: A 2D array of the most representative points. If the
-            subset of Pareto efficient points is less than n_points, returns
-            the subset of the Pareto front.
+                subset of Pareto efficient points is less than n_points, returns
+                the subset of the Pareto front.
         """
         if len(np.atleast_1d(subset_indices)) > n_points:
             kmeans = KMeans(n_clusters=n_points)

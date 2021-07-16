@@ -405,7 +405,12 @@ class NautilusNavigator(InteractiveMethod):
         return reachable_idx
 
     def solve_nautilus_asf_problem(
-        self, pareto_f: np.ndarray, subset_indices: List[int], ref_point: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,
+        self,
+        pareto_f: np.ndarray,
+        subset_indices: List[int],
+        ref_point: np.ndarray,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
     ) -> int:
         """Forms and solves the achievement scalarizing function to find the
         closest point on the Pareto optimal front to the given reference
@@ -415,7 +420,7 @@ class NautilusNavigator(InteractiveMethod):
             pareto_f (np.ndarray): The whole Pareto optimal front.
             subset_indices ([type]): Indices of the currently reachable solutions.
             ref_point (np.ndarray): The reference point indicating a decision
-            maker's preference.
+                maker's preference.
             ideal (np.ndarray): Ideal point.
             nadir (np.ndarray): Nadir point.
 
@@ -433,7 +438,7 @@ class NautilusNavigator(InteractiveMethod):
 
         res = solver.minimize(tmp)
 
-        return res
+        return res["x"]
 
     def calculate_navigation_point(
         self, projection: np.ndarray, nav_point: np.ndarray, steps_remaining: int,

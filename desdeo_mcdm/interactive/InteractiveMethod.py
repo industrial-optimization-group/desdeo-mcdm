@@ -1,4 +1,4 @@
-from desdeo_problem.Problem import MOProblem
+from desdeo_problem.problem import MOProblem
 
 
 class InteractiveMethod:

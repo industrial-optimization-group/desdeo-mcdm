@@ -2,9 +2,7 @@ from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 from desdeo_mcdm.interactive.InteractiveMethod import InteractiveMethod
-from desdeo_problem.Objective import VectorObjective, _ScalarObjective
-from desdeo_problem.Problem import DiscreteDataProblem, MOProblem
-from desdeo_problem.Variable import variable_builder
+from desdeo_problem.problem import DiscreteDataProblem, MOProblem, VectorObjective, _ScalarObjective, variable_builder
 from desdeo_tools.interaction.request import BaseRequest
 from desdeo_tools.scalarization import ReferencePointASF
 from desdeo_tools.scalarization.Scalarizer import DiscreteScalarizer, Scalarizer
