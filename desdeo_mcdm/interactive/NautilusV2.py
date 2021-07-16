@@ -184,18 +184,13 @@ class NautilusException(Exception):
 class NautilusInitialRequest(BaseRequest):
     """
     A request class to handle the Decision maker's initial preferences for the first iteration round.
+
+    Args:
+        ideal (np.ndarray): Ideal vector.
+        nadir (np.ndarray): Nadir vector.
     """
 
     def __init__(self, ideal: np.ndarray, nadir: np.ndarray):
-        """
-        Initialize with ideal and nadir vectors.
-
-        Args:
-            ideal (np.ndarray): Ideal vector.
-            nadir (np.ndarray): Nadir vector.
-
-        """
-
         self.n_objectives = len(ideal)
         self._nadir = nadir
 
@@ -325,18 +320,13 @@ class NautilusRequest(BaseRequest):
 class NautilusStopRequest(BaseRequest):
     """
     A request class to handle termination.
+
+    Args:
+        x_h (np.ndarray): Solution (decision variables).
+        f_h (np.ndarray): Objective vector.
     """
 
     def __init__(self, x_h: np.ndarray, f_h: np.ndarray) -> None:
-        """
-        Initialize termination request with final solution and objective vector.
-
-        Args:
-            x_h (np.ndarray): Solution (decision variables).
-            f_h (np.ndarray): Objective vector.
-
-        """
-
         msg = "Final solution found."
         content = {"message": msg, "solution": x_h, "objective_vector": f_h}
 
@@ -510,7 +500,7 @@ class NautilusV2(InteractiveMethod):
 
         Returns:
             Union[NautilusRequest, NautilusStopRequest]: A new request with content depending on the Decision maker's
-            preferences.
+                preferences.
 
         """
 
@@ -620,7 +610,7 @@ class NautilusV2(InteractiveMethod):
 
         Returns:
             Union[NautilusRequest, NautilusStopRequest]: In case of last iteration, request to stop the solution process.
-            Otherwise, new request with updated solution process information.
+                Otherwise, new request with updated solution process information.
 
         """
 
@@ -860,7 +850,7 @@ class NautilusV2(InteractiveMethod):
 
         Note:
             Remember to specify "dtype=object" in **pref_info** array when using preference
-            method 3.
+                method 3.
 
         """
 

@@ -31,8 +31,6 @@ def validate_reference_point(ref_point: np.ndarray, ideal: np.ndarray, nadir: np
         ideal (np.ndarray): Ideal vector.
         nadir (np.ndarray): Nadir vector.
 
-    Returns:
-
     Raises:
         RPMException: In case reference point is invalid.
 
@@ -109,19 +107,15 @@ class RPMInitialRequest(BaseRequest):
 class RPMRequest(BaseRequest):
     """
     A request class to handle the Decision Maker's preferences after the first iteration round.
+
+    Args:
+        f_current (np.ndarray): Current solution.
+        f_additionals (np.ndarray): Additional solutions.
+        ideal (np.ndarray): Idea vector.
+        nadir (np.ndarray): Nadir vector.
     """
 
     def __init__(self, f_current: np.ndarray, f_additionals: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,) -> None:
-        """
-        Initialize request with current iterations's solution process information.
-
-        Args:
-            f_current (np.ndarray): Current solution.
-            f_additionals (np.ndarray): Additional solutions.
-            ideal (np.ndarray): Idea vector.
-            nadir (np.ndarray): Nadir vector.
-        """
-
         self._f_current = f_current
         self._f_additionals = f_additionals
         self._ideal = ideal

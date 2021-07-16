@@ -193,6 +193,13 @@ class NautilusInitialRequest(BaseRequest):
 class NautilusRequest(BaseRequest):
     """
     A request class to handle the Decision maker's preferences after the first iteration round.
+
+    Args:
+        z_current (np.ndarray): Current iteration point.
+        nadir (np.ndarray): Nadir point.
+        lower_bounds (np.ndarray): Lower bounds for objective functions for next iteration.
+        upper_bounds (np.ndarray): Upper bounds for objective functions for next iteration.
+        distance (np.ndarray): Closeness to Pareto optimal front.
     """
 
     def __init__(
@@ -203,18 +210,6 @@ class NautilusRequest(BaseRequest):
         upper_bounds: np.ndarray,
         distance: np.ndarray,
     ):
-        """
-        Initialize request with current iterations's solution process information.
-
-        Args:
-            z_current (np.ndarray): Current iteration point.
-            nadir (np.ndarray): Nadir point.
-            lower_bounds (np.ndarray): Lower bounds for objective functions for next iteration.
-            upper_bounds (np.ndarray): Upper bounds for objective functions for next iteration.
-            distance (np.ndarray): Closeness to Pareto optimal front.
-
-        """
-
         self._n_objectives = len(nadir)
         self._z_current = z_current
         self._nadir = nadir
