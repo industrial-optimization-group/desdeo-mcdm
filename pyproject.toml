@@ -31,6 +31,7 @@ nb-clean = "^1.4.3"
 ad = "^1.3.2"
 jinja2 = "2.11"
 Cython = "^0.29.24"
+sphinx-autoapi = "^1.8.1"
 
 [build-system]
 requires = ["poetry>=0.12"]
