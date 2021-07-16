@@ -59,7 +59,7 @@ numpydoc_show_class_members = False
 #     "show-inheritance": None,
 #     "exclude-members": ("_abc_cache,_abc_negative_cache," + "_abc_negative_cache_version,_abc_registry"),
 # }
-autodoc_mock_imports = ["hv4dr"]
+autodoc_mock_imports = ["hvwfg"]
 
 source_suffix = [".rst", ".md"]
 
