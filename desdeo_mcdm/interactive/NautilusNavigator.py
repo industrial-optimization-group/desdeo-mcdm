@@ -20,6 +20,7 @@ class NautilusNavigatorRequest(BaseRequest):
         nadir: np.ndarray,
         reachable_lb: np.ndarray,
         reachable_ub: np.ndarray,
+        user_bounds: List[float],
         reachable_idx: List[int],
         step_number: int,
         steps_remaining: int,
@@ -35,6 +36,9 @@ class NautilusNavigatorRequest(BaseRequest):
             "speed between 1-5 as `speed`. If going to a previous step is "
             "desired, please set `go_to_previous` to True, otherwise it should "
             "be False. "
+            "Bounds for one or more objectives may also be specified as 'user_bounds'; when navigating,"
+            "the value of the objectives present in the navigation points will not exceed the values"
+            "specified in 'user_bounds'."
             "Lastly, if stopping is desired, `stop` should be True, "
             "otherwise it should be set to False."
         )
@@ -44,6 +48,7 @@ class NautilusNavigatorRequest(BaseRequest):
             "nadir": nadir,
             "reachable_lb": reachable_lb,
             "reachable_ub": reachable_ub,
+            "user_bounds": user_bounds,
             "reachable_idx": reachable_idx,
             "step_number": step_number,
             "steps_remaining": steps_remaining,
@@ -62,6 +67,7 @@ class NautilusNavigatorRequest(BaseRequest):
             method._nadir,
             method._reachable_lb,
             method._reachable_ub,
+            method._user_bounds,
             method._reachable_idx,
             method._step_number,
             method._steps_remaining,
@@ -80,6 +86,9 @@ class NautilusNavigatorRequest(BaseRequest):
 
         if "go_to_previous" not in response:
             raise NautilusNavigatorException("'go_to_previous' entry missing.")
+
+        if "user_bounds" not in response:
+            raise NautilusNavigatorException("'user_bounds' entry missing")
 
         if "stop" not in response:
             raise NautilusNavigatorException("'stop' entry missing.")
@@ -111,6 +120,30 @@ class NautilusNavigatorRequest(BaseRequest):
             raise (
                 f"Non boolean value {response['go_to_previous']} "
                 f"found for 'go_to_previous' when validating the response."
+            )
+
+        # This ensures that Nones are converted to np.nan
+        user_bounds = np.array(response["user_bounds"], dtype=float)
+        try:
+            if len(user_bounds) != self._content["ideal"].size:
+                raise NautilusNavigatorException(
+                    f"The given user bounds '{user_bounds}' has mismatching dimensions compared "
+                    f"to the ideal point '{ideal}'."
+                )
+            if np.any(user_bounds < self._content["reachable_lb"]) or np.any(
+                user_bounds > self._content["reachable_ub"]
+            ):
+                raise NautilusNavigatorException(
+                    f"The given user bounds '{user_bounds}' has one or more elements that are outside the region "
+                    f"bounded by the reachable upper and lower bounds of the current navigation points. "
+                    f"Current lower bounds: {self._content['reachable_lb']} "
+                    f"Current upper bounds: {self._content['reachable_ub']}."
+                )
+        except Exception as e:
+            raise NautilusNavigatorException(
+                f"An exception rose when validating the given user bounds "
+                f"'{user_bounds}.\n"
+                f"Previous exception: {type(e)}: {str(e)}."
             )
 
         if not type(response["stop"]) == bool:
@@ -158,7 +191,6 @@ class NautilusNavigator(InteractiveMethod):
         ideal: np.ndarray,
         nadir: np.ndarray,
         objective_names: Optional[List[str]] = None,
-        minimize: Optional[List[int]] = None,
     ):
         if not pareto_front.ndim == 2:
             raise NautilusNavigatorException(
@@ -185,15 +217,6 @@ class NautilusNavigator(InteractiveMethod):
         else:
             self._objective_names = [f"f{i+1}" for i in range(ideal.shape[0])]
 
-        if minimize:
-            if not len(objective_names) == ideal.shape[0]:
-                raise NautilusNavigatorException(
-                    "The minimize list must have " "as many elements as there are objectives."
-                )
-            self._minimize = minimize
-        else:
-            self._minimize = [1 for _ in range(ideal.shape[0])]
-
         self._ideal = ideal
         self._nadir = nadir
 
@@ -203,6 +226,9 @@ class NautilusNavigator(InteractiveMethod):
         # bounds of the reachable region
         self._reachable_ub = self._nadir
         self._reachable_lb = self._ideal
+
+        # user given bounds, defaults to none
+        self._user_bounds = np.repeat(np.nan, self._ideal.size)
 
         # currently reachable solution as a list of indices of the Pareto front
         self._reachable_idx = list(range(0, self._pareto_front.shape[0]))
@@ -250,6 +276,7 @@ class NautilusNavigator(InteractiveMethod):
         preference_point = request.response["reference_point"]
         speed = request.response["speed"]
         go_to_previous = request.response["go_to_previous"]
+        user_bounds = request.response["user_bounds"]
         stop = request.response["stop"]
 
         if go_to_previous:
@@ -270,13 +297,14 @@ class NautilusNavigator(InteractiveMethod):
                 nav_point,
                 lower_bounds,
                 upper_bounds,
+                user_bounds,
                 reachable_idx,
                 distance,
                 steps_remaining,
             )
 
         else:
-            return self.update(preference_point, speed, go_to_previous, stop,)
+            return self.update(preference_point, speed, go_to_previous, stop, user_bounds=user_bounds)
 
     def update(
         self,
@@ -288,6 +316,7 @@ class NautilusNavigator(InteractiveMethod):
         nav_point: Optional[np.ndarray] = None,
         lower_bounds: Optional[np.ndarray] = None,
         upper_bounds: Optional[np.ndarray] = None,
+        user_bounds: Optional[np.ndarray] = None,
         reachable_idx: Optional[List[int]] = None,
         distance: Optional[float] = None,
         steps_remaining: Optional[int] = None,
@@ -311,6 +340,9 @@ class NautilusNavigator(InteractiveMethod):
             upper_bounds (Optional[np.ndarray], optional): Upper bounds of
                 the reachable objective vector values. Relevant if go_to_previous
                 is True. Defaults to None.
+            user_bounds (Optional[np.ndarray], optional): The user given bounds for each objective.
+                The reachable lower limit with attempt to not exceed the given bounds for each
+                objective value.
             reachable_idx (Optional[List[int]], optional): Indices of the
                 reachable Pareto optimal solutions. Relevant if go_to_previous is
                 True. Defaults to None.
@@ -329,6 +361,7 @@ class NautilusNavigator(InteractiveMethod):
             self._navigation_point = nav_point
             self._reachable_lb = lower_bounds
             self._reachable_ub = upper_bounds
+            self._user_bounds = user_bounds
             self._reachable_idx = reachable_idx
             self._distance = distance
             self._steps_remaining = steps_remaining
@@ -362,6 +395,8 @@ class NautilusNavigator(InteractiveMethod):
 
         self._reachable_lb = new_lb
         self._reachable_ub = new_ub
+
+        self._user_bounds = user_bounds
 
         new_dist = self.calculate_distance(
             self._navigation_point, self._pareto_front[self._projection_index], self._nadir,
@@ -534,6 +569,7 @@ if __name__ == "__main__":
         "speed": 5,
         "go_to_previous": False,
         "stop": False,
+        "user_bounds": [None, None],
     }
     req.response = response
     req = method.iterate(req)
@@ -551,6 +587,7 @@ if __name__ == "__main__":
         print(req.content["reachable_lb"])
         print(req.content["navigation_point"])
         print(req.content["reachable_ub"])
+        print(req.content["user_bounds"])
 
     req1.response["go_to_previous"] = True
     req = method.iterate(req1)
