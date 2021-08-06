@@ -130,6 +130,7 @@ class NautilusNavigatorRequest(BaseRequest):
                     f"The given user bounds '{user_bounds}' has mismatching dimensions compared "
                     f"to the ideal point '{ideal}'."
                 )
+            """
             if np.any(user_bounds < self._content["reachable_lb"]) or np.any(
                 user_bounds > self._content["reachable_ub"]
             ):
@@ -139,6 +140,7 @@ class NautilusNavigatorRequest(BaseRequest):
                     f"Current lower bounds: {self._content['reachable_lb']} "
                     f"Current upper bounds: {self._content['reachable_ub']}."
                 )
+            """
         except Exception as e:
             raise NautilusNavigatorException(
                 f"An exception rose when validating the given user bounds "
@@ -276,7 +278,8 @@ class NautilusNavigator(InteractiveMethod):
         preference_point = request.response["reference_point"]
         speed = request.response["speed"]
         go_to_previous = request.response["go_to_previous"]
-        user_bounds = request.response["user_bounds"]
+        # ensure Nones are converted to NaN
+        user_bounds = np.array(request.response["user_bounds"], dtype=float)
         stop = request.response["stop"]
 
         if go_to_previous:
@@ -390,13 +393,18 @@ class NautilusNavigator(InteractiveMethod):
         )
 
         self._navigation_point = new_nav
+        self._user_bounds = user_bounds
 
-        new_lb, new_ub = self.calculate_bounds(self._pareto_front[self._reachable_idx], self._navigation_point,)
+        new_lb, new_ub = self.calculate_bounds(
+            self._pareto_front[self._reachable_idx],
+            self._navigation_point,
+            self._user_bounds,
+            self._reachable_lb,
+            self._reachable_ub,
+        )
 
         self._reachable_lb = new_lb
         self._reachable_ub = new_ub
-
-        self._user_bounds = user_bounds
 
         new_dist = self.calculate_distance(
             self._navigation_point, self._pareto_front[self._projection_index], self._nadir,
@@ -436,8 +444,8 @@ class NautilusNavigator(InteractiveMethod):
 
         return reachable_idx
 
+    @staticmethod
     def solve_nautilus_asf_problem(
-        self,
         pareto_f: np.ndarray,
         subset_indices: List[int],
         ref_point: np.ndarray,
@@ -476,7 +484,7 @@ class NautilusNavigator(InteractiveMethod):
 
         # indices of solutions with one or more objective value exceeding the user bounds.
         bound_mask = np.any(tmp > user_bounds, axis=1)
-        tmp = tmp[~bound_mask]
+        tmp[bound_mask] = np.nan
 
         res = solver.minimize(tmp)
 
@@ -500,20 +508,37 @@ class NautilusNavigator(InteractiveMethod):
         new_nav_point = ((steps_remaining - 1) / steps_remaining) * nav_point + (1 / steps_remaining) * projection
         return new_nav_point
 
-    def calculate_bounds(self, pareto_front: np.ndarray, nav_point: np.ndarray,) -> Tuple[np.ndarray, np.ndarray]:
+    @staticmethod
+    def calculate_bounds(
+        pareto_front: np.ndarray,
+        nav_point: np.ndarray,
+        user_bounds: np.ndarray,
+        previous_lb: np.ndarray,
+        previous_ub: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Calculate the new bounds of the reachable points on the Pareto
         optimal front from a navigation point.
 
         Args:
             pareto_front (np.ndarray): The Pareto optimal front.
             nav_point (np.ndarray): The current navigation point.
+            user_bounds (np.ndarray): Bounds given by the user (the DM) for each objective,which should not be
+                exceeded. A 1D array where NaN's indicate 'no bound is given' for the respective objective value.
+            previous_lb (np.ndarray): If no new lower bound can be found for an objective, this value is used.
+            previous_ub (np.ndarray): If no new upper bound can be found for an objective, this value is used.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: The lower and upper bounds.
         """
+        # make sure the front is at least 2D
         _pareto_front = np.atleast_2d(pareto_front)
+
         new_lower_bounds = np.zeros(_pareto_front.shape[1])
         new_upper_bounds = np.zeros(_pareto_front.shape[1])
+
+        # discard solutions that breach the given user bounds by setting them to NaN
+        user_bounds_mask = np.any(_pareto_front > user_bounds, axis=1)
+        _pareto_front[user_bounds_mask] = np.nan
 
         # TODO: vectorize this loop
         for r in range(_pareto_front.shape[1]):
@@ -525,11 +550,11 @@ class NautilusNavigator(InteractiveMethod):
             con_mask = np.all(subject_to <= nav_point[~mask], axis=1)
 
             if _pareto_front[con_mask, mask].size != 0:
-                min_val = np.min(_pareto_front[con_mask, mask])
-                max_val = np.max(_pareto_front[con_mask, mask])
+                min_val = np.nanmin(_pareto_front[con_mask, mask])
+                max_val = np.nanmax(_pareto_front[con_mask, mask])
             else:
-                min_val = self._reachable_lb[r]
-                max_val = self._reachable_ub[r]
+                min_val = previous_lb[r]
+                max_val = previous_ub[r]
 
             new_lower_bounds[r] = min_val
             new_upper_bounds[r] = max_val
