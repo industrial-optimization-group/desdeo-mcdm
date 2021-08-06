@@ -169,18 +169,12 @@ class NautilusNavigator(InteractiveMethod):
 
     Args:
         pareto_front (np.ndarray): A two dimensional numpy array
-        representing a Pareto front with objective vectors on each of its
-        rows.
+            representing a Pareto front with objective vectors on each of its
+            rows.
         ideal (np.ndarray): The ideal objective vector of the problem
-        being represented by the Pareto front.
+            being represented by the Pareto front.
         nadir (np.ndarray): The nadir objective vector of the problem
-        being represented by the Pareto front.
-        objective_names (Optional[List[str]], optional): Names of the
-        objectives. List must match the number of columns in
-        pareto_front. Defaults to 'f1', 'f2', 'f3', ...
-        minimize (Optional[List[int]], optional): Multipliers for each
-        objective. '-1' indicates maximization and '1' minimization.
-        Defaults to all objective values being minimized.
+            being represented by the Pareto front.
 
     Raises:
         NautilusNavigatorException: One or more dimension mismatches are
@@ -188,11 +182,7 @@ class NautilusNavigator(InteractiveMethod):
     """
 
     def __init__(
-        self,
-        pareto_front: np.ndarray,
-        ideal: np.ndarray,
-        nadir: np.ndarray,
-        objective_names: Optional[List[str]] = None,
+        self, pareto_front: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,
     ):
         if not pareto_front.ndim == 2:
             raise NautilusNavigatorException(
@@ -209,15 +199,6 @@ class NautilusNavigator(InteractiveMethod):
 
         if not ideal.shape == nadir.shape:
             raise NautilusNavigatorException("The dimensions of the ideal and nadir point do not match.")
-
-        if objective_names:
-            if not len(objective_names) == ideal.shape[0]:
-                raise NautilusNavigatorException(
-                    "The supplied objective names must have a length equal to " "the number of objectives."
-                )
-            self._objective_names = objective_names
-        else:
-            self._objective_names = [f"f{i+1}" for i in range(ideal.shape[0])]
 
         self._ideal = ideal
         self._nadir = nadir
@@ -331,7 +312,7 @@ class NautilusNavigator(InteractiveMethod):
             speed (int): An integer value between 1-5 indicating the navigation speed.
             go_to_previous (bool): If True, the parameters indicate the state
                 of a previous state, and the request is handled accordingly.
-            stop (bool): If the navigation should stop. If True, self.update return None.
+            stop (bool): If the navigation should stop. If True, returns a request with self's current state.
             step_number (Optional[int], optional): Current step number, or
                 previous step number if go_to_previous is True. Defaults to None.
             nav_point (Optional[np.ndarray], optional): The current
@@ -358,8 +339,13 @@ class NautilusNavigator(InteractiveMethod):
         Returns:
             NautilusNavigatorRequest: Some of the given parameters are erroneous.
         """
+
+        # if stop navigation, return request with current state
+        if stop:
+            return NautilusNavigatorRequest.init_with_method(self)
+
         # go to a previous state
-        if go_to_previous:
+        elif go_to_previous:
             self._step_number = step_number
             self._navigation_point = nav_point
             self._reachable_lb = lower_bounds
@@ -382,11 +368,6 @@ class NautilusNavigator(InteractiveMethod):
 
             self._reference_point = ref_point
             self._projection_index = proj_i
-
-        elif stop:
-            # new reference point given, also update speed
-            self._reference_point = ref_point
-            self._current_speed = speed
 
         new_nav = self.calculate_navigation_point(
             self._pareto_front[self._projection_index], self._navigation_point, self._steps_remaining,

@@ -30,7 +30,7 @@ def nadir(pareto_front):
 
 
 @pytest.fixture()
-def fun():
+def asf_problem():
     fun = NautilusNavigator.solve_nautilus_asf_problem
     return fun
 
@@ -42,7 +42,7 @@ def asf(ideal, nadir):
 
 
 class TestRefPointProjection:
-    def test_no_bounds(self, fun, pareto_front, ideal, nadir, asf):
+    def test_no_bounds(self, asf_problem, pareto_front, ideal, nadir, asf):
         """Test the projection to the Pareto front without specifying any bounds.
         """
         bounds = np.repeat(np.nan, ideal.size)
@@ -56,7 +56,9 @@ class TestRefPointProjection:
         ]
 
         for ref_point in ref_points:
-            proj_i = fun(pareto_front, list(range(0, pareto_front.shape[0])), np.array(ref_point), ideal, nadir, bounds)
+            proj_i = asf_problem(
+                pareto_front, list(range(0, pareto_front.shape[0])), np.array(ref_point), ideal, nadir, bounds
+            )
 
             # The projection should be the point on the Pareto front with the shortest distance to the reference point
             # (metric dictated by use ASF)
@@ -64,7 +66,7 @@ class TestRefPointProjection:
 
             assert proj_i == should_be
 
-    def test_w_subset_i(self, fun, pareto_front, ideal, nadir, asf):
+    def test_w_subset_i(self, asf_problem, pareto_front, ideal, nadir, asf):
         """Test the projection to a subset of the Pareto front.
         """
         bounds = np.repeat(np.nan, ideal.size)
@@ -83,7 +85,7 @@ class TestRefPointProjection:
         filtered_pf[~pf_mask] = np.nan
 
         for ref_point in ref_points:
-            proj_i = fun(pareto_front, subset, np.array(ref_point), ideal, nadir, bounds)
+            proj_i = asf_problem(pareto_front, subset, np.array(ref_point), ideal, nadir, bounds)
 
             # The projection should be the point on the Pareto front with the shortest distance to the reference point
             # (metric dictated by use ASF)
@@ -92,7 +94,7 @@ class TestRefPointProjection:
 
             assert proj_i == should_be
 
-    def test_w_subset_i_and_bounds(self, fun, pareto_front, ideal, nadir, asf):
+    def test_w_subset_i_and_bounds(self, asf_problem, pareto_front, ideal, nadir, asf):
         """Test the projection to a subset of the Pareto front.
         """
         bounds = np.array([np.nan, 1.9, np.nan, np.nan])
@@ -113,7 +115,7 @@ class TestRefPointProjection:
         filtered_pf[bound_mask] = np.nan
 
         for ref_point in ref_points:
-            proj_i = fun(pareto_front, subset, np.array(ref_point), ideal, nadir, bounds)
+            proj_i = asf_problem(pareto_front, subset, np.array(ref_point), ideal, nadir, bounds)
 
             # The projection should be the point on the Pareto front with the shortest distance to the reference point
             # (metric dictated by use ASF)
