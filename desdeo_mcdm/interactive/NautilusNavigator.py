@@ -374,7 +374,7 @@ class NautilusNavigator(InteractiveMethod):
                 self._current_speed = speed
 
             proj_i = self.solve_nautilus_asf_problem(
-                self._pareto_front, self._reachable_idx, ref_point, self._ideal, self._nadir,
+                self._pareto_front, self._reachable_idx, ref_point, self._ideal, self._nadir, self._user_bounds
             )
 
             self._reference_point = ref_point
@@ -443,6 +443,7 @@ class NautilusNavigator(InteractiveMethod):
         ref_point: np.ndarray,
         ideal: np.ndarray,
         nadir: np.ndarray,
+        user_bounds: np.ndarray,
     ) -> int:
         """Forms and solves the achievement scalarizing function to find the
         closest point on the Pareto optimal front to the given reference
@@ -455,6 +456,8 @@ class NautilusNavigator(InteractiveMethod):
                 maker's preference.
             ideal (np.ndarray): Ideal point.
             nadir (np.ndarray): Nadir point.
+            user_bounds (np.ndarray): Bounds given by the user (the DM) for each objective,which should not be
+                exceeded. A 1D array where NaN's indicate 'no bound is given' for the respective objective value.
 
         Returns:
             int: Index of the closest point according the minimized value of the ASF.
@@ -463,10 +466,17 @@ class NautilusNavigator(InteractiveMethod):
         scalarizer = DiscreteScalarizer(asf, {"reference_point": ref_point})
         solver = DiscreteMinimizer(scalarizer)
 
+        # Copy the front and filter out the reachable solutions.
+        # If user bounds are given, filter out solutions outside the those bounds.
+        # Infeasible solutions on the pareto font are set to be NaNs.
         tmp = np.copy(pareto_f)
         mask = np.zeros(tmp.shape[0], dtype=bool)
         mask[subset_indices] = True
         tmp[~mask] = np.nan
+
+        # indices of solutions with one or more objective value exceeding the user bounds.
+        bound_mask = np.any(tmp > user_bounds, axis=1)
+        tmp = tmp[~bound_mask]
 
         res = solver.minimize(tmp)
 
