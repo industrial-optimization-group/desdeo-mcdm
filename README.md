@@ -1,3 +1,6 @@
+[![PyPI version](https://badge.fury.io/py/desdeo-mcdm.svg)](https://badge.fury.io/py/desdeo-mcdm)
+[![Documentation Status](https://readthedocs.org/projects/desdeo-mcdm/badge/?version=latest)](https://desdeo-mcdm.readthedocs.io/en/latest/?badge=latest)
+
 # desdeo-mcdm
 
 Contains interactive optimization methods for solving multiobjective optimization problems. This package is part of the DESDEO framework.
@@ -27,4 +30,5 @@ Documentation for this package can be found [here](https://desdeo-mcdm.readthedo
 - NAUTILUS
 - NAUTILUSv2
 - Reference point method
+- (Convex) pareto navigator
 
