@@ -125,10 +125,11 @@ class NautilusNavigatorRequest(BaseRequest):
         # This ensures that Nones are converted to np.nan
         user_bounds = np.array(response["user_bounds"], dtype=float)
         try:
+            print(f"user bounds: {user_bounds}")
             if len(user_bounds) != self._content["ideal"].size:
                 raise NautilusNavigatorException(
                     f"The given user bounds '{user_bounds}' has mismatching dimensions compared "
-                    f"to the ideal point '{ideal}'."
+                    f"to the ideal point '{self._content['ideal']}'."
                 )
             """
             if np.any(user_bounds < self._content["reachable_lb"]) or np.any(
@@ -144,7 +145,7 @@ class NautilusNavigatorRequest(BaseRequest):
         except Exception as e:
             raise NautilusNavigatorException(
                 f"An exception rose when validating the given user bounds "
-                f"'{user_bounds}.\n"
+                f"{user_bounds}.\n"
                 f"Previous exception: {type(e)}: {str(e)}."
             )
 
