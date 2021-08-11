@@ -125,7 +125,6 @@ class NautilusNavigatorRequest(BaseRequest):
         # This ensures that Nones are converted to np.nan
         user_bounds = np.array(response["user_bounds"], dtype=float)
         try:
-            print(f"user bounds: {user_bounds}")
             if len(user_bounds) != self._content["ideal"].size:
                 raise NautilusNavigatorException(
                     f"The given user bounds '{user_bounds}' has mismatching dimensions compared "
