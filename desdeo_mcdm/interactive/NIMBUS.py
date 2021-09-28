@@ -356,11 +356,17 @@ class NIMBUS(InteractiveMethod):
 
     Args:
         problem (MOProblem): The problem to be solved.
-        scalar_method (Optional[ScalarMethod], optional): The method used to solve
-            the various ASF minimization problems present in the method. Defaults to None.
+        scalar_method (Optional[Union[ScalarMethod, str]], optional): The method used to solve
+            the various ASF minimization problems present in the method. Defaults to 'scipy_de' (differential evolution).
+        starting_point(Optional[np.ndarray], optional): The initial solution (objectives) to start classification from.
+            If None, a neutral starting point will be computed. 
+    Note:
+        When a starting point is supplied, decision variables of that point will be approximated to be the variables of the
+        solution closest to the starting point. In other words, the decision variables associated to the initial point may be
+        inaccurate!
     """
 
-    def __init__(self, problem: Union[MOProblem, DiscreteDataProblem], scalar_method: Optional[ScalarMethod] = None):
+    def __init__(self, problem: Union[MOProblem, DiscreteDataProblem], scalar_method: Optional[Union[ScalarMethod, str]] = "scipy_de", starting_point: Optional[np.ndarray] = None):
         # check if ideal and nadir are defined
         if problem.ideal is None or problem.nadir is None:
             # TODO: use same method as defined in scalar_method
@@ -373,13 +379,26 @@ class NIMBUS(InteractiveMethod):
 
         self._scalar_method = scalar_method
 
-        # generate Pareto optimal starting point
+        # check starting point if given
+        if starting_point is not None:
+            if np.squeeze(starting_point).shape != np.squeeze(self._ideal.shape):
+                raise NimbusException(
+                    f"The given starting point {starting_point} has mismatching dimensions {starting_point.shape}."
+                    )
+
         if isinstance(problem, MOProblem):
-            asf = SimpleASF(np.ones(self._ideal.shape))
+            # Change me to be the right ASF
+            # if starting point was given, use that as the reference point
+            if starting_point is None:
+                reference_point = (self._ideal + self._nadir) / 2
+            else:
+                reference_point = starting_point
+
+            asf = PointMethodASF(self._nadir, self._ideal)
             scalarizer = Scalarizer(
                 lambda x: problem.evaluate(x).objectives,
                 asf,
-                scalarizer_args={"reference_point": np.atleast_2d(self._ideal)},
+                scalarizer_args={"reference_point": reference_point},
             )
 
             if problem.n_of_constraints > 0:
@@ -398,16 +417,27 @@ class NIMBUS(InteractiveMethod):
             if res["success"]:
                 self._current_solution = res["x"]
                 self._current_objectives = problem.evaluate(self._current_solution).objectives.squeeze()
+            else:
+                raise NimbusException("Could not solve the initial ASF.")
 
-        else:
+        elif isinstance(problem, DiscreteDataProblem):
             # discrete case
-            asf = SimpleASF(np.ones(self._ideal.shape))
-            scalarizer = DiscreteScalarizer(asf, scalarizer_args={"reference_point": self._ideal})
+            if starting_point is None:
+                reference_point = (self._ideal + self._nadir) / 2
+            else:
+                reference_point = starting_point
+
+            asf = PointMethodASF(self._nadir, self._ideal)
+            scalarizer = DiscreteScalarizer(asf, scalarizer_args={"reference_point": reference_point})
             solver = DiscreteMinimizer(scalarizer)
 
             res = solver.minimize(problem.objectives)
             self._current_solution = problem.decision_variables[res["x"]]
             self._current_objectives = problem.objectives[res["x"]]
+
+        else:
+            # unsupported problem type
+            raise NimbusException(f"Unsupported problem type {type(problem)}.")
 
         self._archive_solutions = []
         self._archive_objectives = []
@@ -1030,10 +1060,9 @@ class NIMBUS(InteractiveMethod):
 
 
 if __name__ == "__main__":
-    """
-    from desdeo_problem.Objective import _ScalarObjective
-    from desdeo_problem.Variable import variable_builder
-    from desdeo_problem.Constraint import ScalarConstraint
+    from desdeo_problem.problem.Objective import _ScalarObjective
+    from desdeo_problem.problem.Variable import variable_builder
+    from desdeo_problem.problem.Constraint import ScalarConstraint
 
     # create the problem
     def f_1(x):
@@ -1094,8 +1123,8 @@ if __name__ == "__main__":
     res_3.response = response_pref
 
     res_4 = method.iterate(res_3)
-    """
 
+    """
     import matplotlib.pyplot as plt
     from desdeo_problem.problem import _ScalarObjective, variable_builder
 
@@ -1192,3 +1221,4 @@ if __name__ == "__main__":
 
     plt.show()
 
+"""
