@@ -15,7 +15,7 @@ Requires [poetry](https://python-poetry.org/). See `pyproject.toml` for Python p
 
 1. `git clone https://github.com/industrial-optimization-group/desdeo-mcdm`
 2. `cd desdeo-mcdm`
-3. `poetry init`
+3. `poetry shell`
 4. `poetry install`
 
 ## Documentation
