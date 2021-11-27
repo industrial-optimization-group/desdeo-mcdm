@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -7,6 +7,37 @@ from desdeo_tools.interaction.request import BaseRequest, SimplePlotRequest
 from desdeo_tools.scalarization.ASF import PointMethodASF
 from desdeo_tools.scalarization.Scalarizer import DiscreteScalarizer
 from desdeo_tools.solver.ScalarSolver import DiscreteMinimizer
+
+
+class NautilusNavigatorStopRequest(BaseRequest):
+    """Request to stop navigation and return the solution found (or the
+    currently reachable solutions, if stopped before the navigation ends.
+    """
+
+    def __init__(
+        self,
+        reachable_idx: List[int],
+        pareto_front: np.ndarray,
+        decision_variables: Optional[np.ndarray] = None,
+    ):
+        message = (
+            "These are the current objectives vectors (and decision vectors, if supplied)"
+            "reachable from the current navigation point."
+        )
+
+        if decision_variables is not None:
+            reachable_decision = decision_variables[reachable_idx]
+        else:
+            reachable_decision = None
+
+        content = {
+            "message": message,
+            "objective_vectors": pareto_front[reachable_idx],
+            "decision_vectors": reachable_decision,
+            "reachable_idx": reachable_idx,
+        }
+
+        super().__init__("classification_preference", "no_interaction", content=content)
 
 
 class NautilusNavigatorRequest(BaseRequest):
@@ -95,7 +126,9 @@ class NautilusNavigatorRequest(BaseRequest):
 
         ref_point = response["reference_point"]
         try:
-            if np.any(ref_point < self._content["ideal"]) or np.any(ref_point > self._content["nadir"]):
+            if np.any(ref_point < self._content["ideal"]) or np.any(
+                ref_point > self._content["nadir"]
+            ):
                 raise NautilusNavigatorException(
                     f"The given reference point {ref_point} "
                     "must be between the ranges imposed by the ideal and nadir points."
@@ -149,7 +182,10 @@ class NautilusNavigatorRequest(BaseRequest):
             )
 
         if not type(response["stop"]) == bool:
-            raise (f"Non boolean value {response['stop']} " f"found for 'go_to_previous' when validating the response.")
+            raise (
+                f"Non boolean value {response['stop']} "
+                f"found for 'go_to_previous' when validating the response."
+            )
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
@@ -175,6 +211,11 @@ class NautilusNavigator(InteractiveMethod):
             being represented by the Pareto front.
         nadir (np.ndarray): The nadir objective vector of the problem
             being represented by the Pareto front.
+        decision_variables (Optional[np.ndarray]): Two dimensinoal numpy 
+            array of decision variables
+            that can be optionally supplied. The i'th vector in 
+            decision_variables should result in the i'th objective
+            vector in pareto_front. Defaults to None.
 
     Raises:
         NautilusNavigatorException: One or more dimension mismatches are
@@ -182,13 +223,29 @@ class NautilusNavigator(InteractiveMethod):
     """
 
     def __init__(
-        self, pareto_front: np.ndarray, ideal: np.ndarray, nadir: np.ndarray,
+        self,
+        pareto_front: np.ndarray,
+        ideal: np.ndarray,
+        nadir: np.ndarray,
+        decision_variables: Optional[np.ndarray] = None,
     ):
         if not pareto_front.ndim == 2:
             raise NautilusNavigatorException(
                 "The supplied Pareto front should be a two dimensional array. Found "
                 f" number of dimensions {pareto_front.ndim}."
             )
+
+        if decision_variables is not None:
+            # check correct dimensino of decision_variables, if supplied.
+            if decision_variables.shape[0] != pareto_front.shape[0]:
+                raise NautilusNavigatorException(
+                    "The supplied decision variables must be as many as the objective "
+                    "vectors in the supplied Pareto front. Dimension of variables "
+                    f"{decision_variables.shape[0]}; dimension of Pareto front "
+                    f"{pareto_front.shape[0]}."
+                )
+
+        self._decision_variables = decision_variables
 
         if not ideal.shape[0] == pareto_front.shape[1]:
             raise NautilusNavigatorException(
@@ -198,7 +255,9 @@ class NautilusNavigator(InteractiveMethod):
             )
 
         if not ideal.shape == nadir.shape:
-            raise NautilusNavigatorException("The dimensions of the ideal and nadir point do not match.")
+            raise NautilusNavigatorException(
+                "The dimensions of the ideal and nadir point do not match."
+            )
 
         self._ideal = ideal
         self._nadir = nadir
@@ -247,7 +306,9 @@ class NautilusNavigator(InteractiveMethod):
         reqs = self.handle_request(request)
         return reqs
 
-    def handle_request(self, request: NautilusNavigatorRequest) -> NautilusNavigatorRequest:
+    def handle_request(
+        self, request: NautilusNavigatorRequest
+    ) -> Union[NautilusNavigatorRequest, NautilusNavigatorStopRequest]:
         """Handle the Request and its contents.
 
         Args:
@@ -262,13 +323,18 @@ class NautilusNavigator(InteractiveMethod):
         # ensure Nones are converted to NaN
         user_bounds = np.array(request.response["user_bounds"], dtype=float)
         stop = request.response["stop"]
+        reachable_idx = request.content["reachable_idx"]
+
+        if stop:
+            return NautilusNavigatorStopRequest(
+                reachable_idx, self._pareto_front, self._decision_variables
+            )
 
         if go_to_previous:
             step_number = request.content["step_number"]
             nav_point = request.content["navigation_point"]
             lower_bounds = request.content["reachable_lb"]
             upper_bounds = request.content["reachable_ub"]
-            reachable_idx = request.content["reachable_idx"]
             distance = request.content["distance"]
             steps_remaining = request.content["steps_remaining"]
 
@@ -288,7 +354,9 @@ class NautilusNavigator(InteractiveMethod):
             )
 
         else:
-            return self.update(preference_point, speed, go_to_previous, stop, user_bounds=user_bounds)
+            return self.update(
+                preference_point, speed, go_to_previous, stop, user_bounds=user_bounds
+            )
 
     def update(
         self,
@@ -358,19 +426,28 @@ class NautilusNavigator(InteractiveMethod):
 
         # compute a new navigation point closer to the Pareto front and the
         # bounds of the reachable Pareto optimal region.
-        elif self._step_number == 1 or not np.allclose(ref_point, self._reference_point):
+        elif self._step_number == 1 or not np.allclose(
+            ref_point, self._reference_point
+        ):
             if self._step_number == 1:
                 self._current_speed = speed
 
             proj_i = self.solve_nautilus_asf_problem(
-                self._pareto_front, self._reachable_idx, ref_point, self._ideal, self._nadir, self._user_bounds
+                self._pareto_front,
+                self._reachable_idx,
+                ref_point,
+                self._ideal,
+                self._nadir,
+                self._user_bounds,
             )
 
             self._reference_point = ref_point
             self._projection_index = proj_i
 
         new_nav = self.calculate_navigation_point(
-            self._pareto_front[self._projection_index], self._navigation_point, self._steps_remaining,
+            self._pareto_front[self._projection_index],
+            self._navigation_point,
+            self._steps_remaining,
         )
 
         self._navigation_point = new_nav
@@ -388,7 +465,9 @@ class NautilusNavigator(InteractiveMethod):
         self._reachable_ub = new_ub
 
         new_dist = self.calculate_distance(
-            self._navigation_point, self._pareto_front[self._projection_index], self._nadir,
+            self._navigation_point,
+            self._pareto_front[self._projection_index],
+            self._nadir,
         )
 
         self._distance = new_dist
@@ -410,7 +489,10 @@ class NautilusNavigator(InteractiveMethod):
         return NautilusNavigatorRequest.init_with_method(self)
 
     def calculate_reachable_point_indices(
-        self, pareto_front: np.ndarray, lower_bounds: np.ndarray, upper_bounds: np.ndarray,
+        self,
+        pareto_front: np.ndarray,
+        lower_bounds: np.ndarray,
+        upper_bounds: np.ndarray,
     ) -> List[int]:
         """Calculate the indices of the reachable Pareto optimal solutions
         based on lower and upper bounds.
@@ -486,7 +568,9 @@ class NautilusNavigator(InteractiveMethod):
         Returns:
             np.ndarray: The new navigation point.
         """
-        new_nav_point = ((steps_remaining - 1) / steps_remaining) * nav_point + (1 / steps_remaining) * projection
+        new_nav_point = ((steps_remaining - 1) / steps_remaining) * nav_point + (
+            1 / steps_remaining
+        ) * projection
         return new_nav_point
 
     @staticmethod
@@ -526,7 +610,9 @@ class NautilusNavigator(InteractiveMethod):
             mask = np.zeros(_pareto_front.shape[1], dtype=bool)
             mask[r] = True
 
-            subject_to = _pareto_front[:, ~mask].reshape((_pareto_front.shape[0], _pareto_front.shape[1] - 1))
+            subject_to = _pareto_front[:, ~mask].reshape(
+                (_pareto_front.shape[0], _pareto_front.shape[1] - 1)
+            )
 
             con_mask = np.all(subject_to <= nav_point[~mask], axis=1)
 
@@ -542,7 +628,9 @@ class NautilusNavigator(InteractiveMethod):
 
         return new_lower_bounds, new_upper_bounds
 
-    def calculate_distance(self, nav_point: np.ndarray, projection: np.ndarray, nadir: np.ndarray) -> float:
+    def calculate_distance(
+        self, nav_point: np.ndarray, projection: np.ndarray, nadir: np.ndarray
+    ) -> float:
         """Calculate the distance to the Pareto optimal front from a
         navigation point. The distance is calculated to the supplied
         projection which is assumed to lay on the front.
