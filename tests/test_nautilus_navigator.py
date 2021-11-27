@@ -152,6 +152,92 @@ class TestNavigation:
             npt.assert_almost_equal(pareto_front[reachable_i], final_objectives[i])
             npt.assert_almost_equal(decision_variables[reachable_i], final_variables[i])
 
+    def test_navigation_end_novars(self, pareto_front, ideal, nadir):
+        """Test navigation and stopping at end of navigation without variables"""
+        method = NautilusNavigator(pareto_front, ideal, nadir)
+        method._steps_remaining = 10
+        request = method.start()
+
+        while True:
+            response = {
+                "reference_point": np.array([0.7, 2.2, 1.1, 1.9]),
+                "speed": 5,
+                "go_to_previous": False,
+                "stop": False,
+                "user_bounds": [None, None, None, None],
+            }
+
+            request.response = response
+
+            request = method.iterate(request)
+
+            if request.content["steps_remaining"] == 1:
+                break
+
+        response = {
+            "reference_point": np.array([0.75, 2.15, 1.15, 1.85]),
+            "speed": 5,
+            "go_to_previous": False,
+            "stop": True,
+            "user_bounds": [None, None, None, None],
+        }
+
+        request.response = response
+
+        request = method.iterate(request)
+
+        # The final solution should be the reference point
+        final_objectives = request.content["objective_vectors"]
+        final_variables = request.content["decision_vectors"]
+
+        npt.assert_almost_equal(final_objectives, pareto_front[2])
+        assert final_variables is None
+
+    def test_navigation_intermediate_stop_novars(self, pareto_front, ideal, nadir):
+        """Test navigation and stopping at an intermediate iteration without variables"""
+        method = NautilusNavigator(pareto_front, ideal, nadir)
+        method._steps_remaining = 10
+        request = method.start()
+
+        while True:
+            response = {
+                "reference_point": np.array([0.7, 2.2, 1.1, 1.9]),
+                "speed": 5,
+                "go_to_previous": False,
+                "stop": False,
+                "user_bounds": [None, None, None, None],
+            }
+
+            request.response = response
+
+            request = method.iterate(request)
+
+            if request.content["steps_remaining"] == 5:
+                break
+
+        response = {
+            "reference_point": np.array([0.75, 2.15, 1.15, 1.85]),
+            "speed": 5,
+            "go_to_previous": False,
+            "stop": True,
+            "user_bounds": [None, None, None, None],
+        }
+
+        request.response = response
+
+        request = method.iterate(request)
+
+        # The solutions found
+        final_objectives = request.content["objective_vectors"]
+        final_variables = request.content["decision_vectors"]
+        reachable = request.content["reachable_idx"]
+
+        # check that the indices match
+        for i, reachable_i in enumerate(reachable):
+            npt.assert_almost_equal(pareto_front[reachable_i], final_objectives[i])
+
+        assert final_variables is None
+
 
 class TestRefPointProjection:
     def test_no_bounds(self, asf_problem, pareto_front, ideal, nadir, asf):
