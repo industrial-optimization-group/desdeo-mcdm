@@ -3,7 +3,8 @@
 
 # desdeo-mcdm
 
-Contains interactive optimization methods for solving multiobjective optimization problems. This package is part of the DESDEO framework.
+Contains interactive optimization methods for solving multiobjective optimization problems. This package is part of
+the [DESDEO framework](https://github.com/industrial-optimization-group/DESDEO).
 
 ## Installation
 
@@ -32,3 +33,6 @@ Documentation for this package can be found [here](https://desdeo-mcdm.readthedo
 - Reference point method
 - (Convex) pareto navigator
 
+## Citation
+
+If you decide to use DESDEO is any of your works or research, we would appreciate you citing the appropiate paper published in [IEEE Access](https://doi.org/10.1109/ACCESS.2021.3123825) (open access).
