@@ -152,7 +152,7 @@ def test_step_back(simple_data):
 
 
 @pytest.mark.enautilus
-def test_change_remaining(simple_data):
+def test_change_remaining_response(simple_data):
     """Tests stepping back"""
     front, ideal, nadir = simple_data
 
@@ -202,3 +202,77 @@ def test_change_remaining(simple_data):
         "change_remaining": True,
         "iterations_left": 20,
     }
+
+
+@pytest.mark.enautilus
+def test_change_remaining_iterate(simple_data):
+    """Tests iterations of stepping back"""
+    front, ideal, nadir = simple_data
+
+    method = ENautilus((front), ideal, nadir)
+
+    req = method.start()
+
+    n_iterations = 15
+    n_points = 4
+
+    req.response = {
+        "n_iterations": n_iterations,
+        "n_points": n_points,
+    }
+
+    req = method.iterate(req)
+    req.response = {
+        "preferred_point_index": 0,
+        "step_back": False,
+        "change_remaining": False,
+    }
+
+    for _ in range(3):
+        req = method.iterate(req)
+        req.response = {
+            "preferred_point_index": 0,
+            "step_back": False,
+            "change_remaining": False,
+        }
+
+    # increment iterations notably
+    iterations_increment = 20
+    req.response = {
+        "preferred_point_index": 0,
+        "step_back": False,
+        "change_remaining": True,
+        "iterations_left": iterations_increment,
+    }
+
+    req = method.iterate(req)
+
+    assert method._n_iterations_left == iterations_increment
+    assert req.content["n_iterations_left"] == iterations_increment
+
+    # iterate for n times
+    n = 10
+    for _ in range(n):
+        req.response = {
+            "preferred_point_index": 0,
+            "step_back": False,
+            "change_remaining": False,
+        }
+        req = method.iterate(req)
+
+    assert method._n_iterations_left == iterations_increment - n
+
+    # decrement iterations left
+    iterations_decrement = 5
+
+    req.response = {
+        "preferred_point_index": 0,
+        "step_back": False,
+        "change_remaining": True,
+        "iterations_left": iterations_decrement,
+    }
+
+    req = method.iterate(req)
+
+    assert method._n_iterations_left == iterations_decrement
+    assert req.content["n_iterations_left"] == iterations_decrement

@@ -290,23 +290,27 @@ class ENautilus(InteractiveMethod):
         """Handles the intermediate requests.
 
         """
-        preferred_point_index = request.response["preferred_point_index"]
-        self._preferred_point = request.content["points"][preferred_point_index]
+        if not request.response["step_back"]:
+            preferred_point_index = request.response["preferred_point_index"]
+            self._preferred_point = request.content["points"][preferred_point_index]
 
-        if self._n_iterations_left <= 1:
-            self._n_iterations_left = 0
-            return ENautilusStopRequest(self._preferred_point)
+            if self._n_iterations_left <= 1:
+                self._n_iterations_left = 0
+                return ENautilusStopRequest(self._preferred_point)
 
-        self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
-        self._reachable_ub = request.content["upper_bounds"][preferred_point_index]
-        self._distance = request.content["distances"][preferred_point_index]
+            self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
+            self._reachable_ub = request.content["upper_bounds"][preferred_point_index]
+            self._distance = request.content["distances"][preferred_point_index]
 
-        self._reachable_idx = self.calculate_reachable_point_indices(
-            self._pareto_front, self._reachable_lb, self._reachable_ub
-        )
+            self._reachable_idx = self.calculate_reachable_point_indices(
+                self._pareto_front, self._reachable_lb, self._reachable_ub
+            )
 
-        # decrement iterations left
-        self._n_iterations_left -= 1
+            if not request.response["change_remaining"]:
+                # decrement iterations left
+                self._n_iterations_left -= 1
+            else:
+                self._n_iterations_left = request.response["iterations_left"]
 
         # Start again
         zbars = self.calculate_representative_points(
