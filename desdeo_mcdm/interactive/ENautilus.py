@@ -87,8 +87,8 @@ class ENautilusRequest(BaseRequest):
             'new_iterations_left'.
             If you wish to step back, then set 'step_back' to True. When stepping back to a 
             previous iteration, that iteration's preferred solution should be supplied alongside
-            the associated upper and lower bounds as 'prev_pref_solution', 'prev_lower_bounds', and
-            'prev_upper_bounds'. The number of remaining iterations should be supplied as 
+            the associated upper and lower bounds as 'prev_pref_solution', 'prev_lower_bound', and
+            'prev_upper_bound'. The number of remaining iterations should be supplied as 
             well when stepping back as 'iterations_left'.
             When 'step_back' is true, 'preferred_point_index' and 'change_remaining' are ignored.
             """
@@ -131,10 +131,10 @@ class ENautilusRequest(BaseRequest):
             # check that the previous solution is given alongside its bounds.
             if "prev_pref_solution" not in response:
                 raise ENautilusException("'prev_pref_solution' entry missing.")
-            if "prev_lower_bounds" not in response:
-                raise ENautilusException("'prev_lower_bounds' entry missing.")
-            if "prev_upper_bounds" not in response:
-                raise ENautilusException("'prev_upper_bounds' entry missing.")
+            if "prev_lower_bound" not in response:
+                raise ENautilusException("'prev_lower_bound' entry missing.")
+            if "prev_upper_bound" not in response:
+                raise ENautilusException("'prev_upper_bound' entry missing.")
             if "iterations_left" not in response:
                 raise ENautilusException(
                     "When stepping back 'iterations_left' must be specified."
@@ -311,6 +311,10 @@ class ENautilus(InteractiveMethod):
                 self._n_iterations_left -= 1
             else:
                 self._n_iterations_left = request.response["iterations_left"]
+
+        # stepping back
+        else:
+            pass
 
         # Start again
         zbars = self.calculate_representative_points(

@@ -112,7 +112,7 @@ def test_step_back(simple_data):
             "prev_pref_solution": prev_solution,
         }
 
-    assert "prev_lower_bounds" in str(e)
+    assert "prev_lower_bound" in str(e)
 
     # previous upper bound missing
     with pytest.raises(ENautilusException) as e:
@@ -121,10 +121,10 @@ def test_step_back(simple_data):
             "step_back": True,
             "change_remaining": False,
             "prev_pref_solution": prev_solution,
-            "prev_lower_bounds": prev_l_bounds,
+            "prev_lower_bound": prev_l_bounds,
         }
 
-    assert "prev_upper_bounds" in str(e)
+    assert "prev_upper_bound" in str(e)
 
     # iterations_left missing
     with pytest.raises(ENautilusException) as e:
@@ -133,8 +133,8 @@ def test_step_back(simple_data):
             "step_back": True,
             "change_remaining": False,
             "prev_pref_solution": prev_solution,
-            "prev_lower_bounds": prev_l_bounds,
-            "prev_upper_bounds": prev_u_bounds,
+            "prev_lower_bound": prev_l_bounds,
+            "prev_upper_bound": prev_u_bounds,
         }
 
     assert "iterations_left" in str(e)
@@ -145,15 +145,15 @@ def test_step_back(simple_data):
         "step_back": True,
         "change_remaining": False,
         "prev_pref_solution": prev_solution,
-        "prev_lower_bounds": prev_l_bounds,
-        "prev_upper_bounds": prev_u_bounds,
+        "prev_lower_bound": prev_l_bounds,
+        "prev_upper_bound": prev_u_bounds,
         "iterations_left": iter_left,
     }
 
 
 @pytest.mark.enautilus
 def test_change_remaining_response(simple_data):
-    """Tests stepping back"""
+    """Tests the response for chaging remaining iterations"""
     front, ideal, nadir = simple_data
 
     method = ENautilus((front), ideal, nadir)
