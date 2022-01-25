@@ -43,12 +43,16 @@ class ENautilusInitialRequest(BaseRequest):
         n_iterations = response["n_iterations"]
 
         if not isinstance(n_iterations, int) or int(n_iterations) < 1:
-            raise ENautilusException("'n_iterations' must be a positive integer greater than zero")
+            raise ENautilusException(
+                "'n_iterations' must be a positive integer greater than zero"
+            )
 
         n_points = response["n_points"]
 
         if not isinstance(n_points, int) or int(n_points) < 1:
-            raise ENautilusException("'n_points' must be a positive integer greater than zero")
+            raise ENautilusException(
+                "'n_points' must be a positive integer greater than zero"
+            )
 
     @classmethod
     def init_with_method(cls, method):
@@ -73,10 +77,11 @@ class ENautilusRequest(BaseRequest):
         lower_bounds: np.ndarray,
         upper_bounds: np.ndarray,
         distances: np.ndarray,
-        minimize: List[int],
     ):
         self._max_index = len(np.squeeze(points))
-        msg = "Please select the most preferred point by index as 'preferred_point_index'"
+        msg = (
+            "Please select the most preferred point by index as 'preferred_point_index'"
+        )
         content = {
             "message": msg,
             "ideal": ideal,
@@ -85,7 +90,6 @@ class ENautilusRequest(BaseRequest):
             "lower_bounds": lower_bounds,
             "upper_bounds": upper_bounds,
             "distances": distances,
-            "minimize": minimize,
         }
 
         super().__init__("reference_point_preference", "required", content=content)
@@ -124,7 +128,6 @@ class ENautilus(InteractiveMethod):
         ideal: np.ndarray,
         nadir: np.ndarray,
         objective_names: Optional[List[str]] = None,
-        minimize: Optional[List[int]] = None,
     ):
         """
 
@@ -139,9 +142,6 @@ class ENautilus(InteractiveMethod):
             objective_names (Optional[List[str]], optional): Names of the
                 objectives. List must match the number of columns in
                 pareto_front. Defaults to 'f1', 'f2', 'f3', ...
-            minimize (Optional[List[int]], optional): Multipliers for each
-                objective. '-1' indicates maximization and '1' minimization.
-                Defaults to all objective values being minimized (deprecated!).
 
         Raises:
             ENavigatorException: One or more dimension mismatches are
@@ -161,23 +161,19 @@ class ENautilus(InteractiveMethod):
             )
 
         if not ideal.shape == nadir.shape:
-            raise ENautilusException("The dimensions of the ideal and nadir point do not match.")
+            raise ENautilusException(
+                "The dimensions of the ideal and nadir point do not match."
+            )
 
         if objective_names:
             if not len(objective_names) == ideal.shape[0]:
                 raise ENautilusException(
-                    "The supplied objective names must have a length equal to " "the number of objectives."
+                    "The supplied objective names must have a length equal to "
+                    "the number of objectives."
                 )
             self._objective_names = objective_names
         else:
             self._objective_names = [f"f{i+1}" for i in range(ideal.shape[0])]
-
-        if minimize:
-            if not len(objective_names) == ideal.shape[0]:
-                raise ENautilusException("The minimize list must have " "as many elements as there are objectives.")
-            self._minimize = minimize
-        else:
-            self._minimize = [1 for _ in range(ideal.shape[0])]
 
         self._ideal = ideal
         self._nadir = nadir
@@ -192,15 +188,11 @@ class ENautilus(InteractiveMethod):
         # currently reachable solution as a list of indices of the Pareto front
         self._reachable_idx = list(range(0, self._pareto_front.shape[0]))
 
-        # current iteration step number
-        self._step_number = 1
-
         self._distance = None
 
         self._preferred_point = None
         self._projection_index = None
 
-        self._n_iterations = None
         self._n_points = None
         self._n_iterations_left = None
 
@@ -221,26 +213,35 @@ class ENautilus(InteractiveMethod):
             # if stop request, do nothing
             return request
 
-    def handle_initial_request(self, request: ENautilusInitialRequest) -> ENautilusRequest:
+    def handle_initial_request(
+        self, request: ENautilusInitialRequest
+    ) -> ENautilusRequest:
         """Handles the initial request by parsing the response appropriately.
 
         """
-        self._n_iterations = request.response["n_iterations"]
+        self._n_iterations_left = request.response["n_iterations"]
         self._n_points = request.response["n_points"]
-        self._n_iterations_left = self._n_iterations
         # self._intermediate_points = np.repeat(np.atleast_2d(self._nadir), self._n_points, axis=0)
         self._preferred_point = self._nadir
 
-        zbars = self.calculate_representative_points(self._pareto_front, self._reachable_idx, self._n_points)
-        zs = self.calculate_intermediate_points(self._preferred_point, zbars, self._n_iterations_left)
-        new_lower_bounds, new_upper_bounds = self.calculate_bounds(self._pareto_front, zs)
+        zbars = self.calculate_representative_points(
+            self._pareto_front, self._reachable_idx, self._n_points
+        )
+        zs = self.calculate_intermediate_points(
+            self._preferred_point, zbars, self._n_iterations_left
+        )
+        new_lower_bounds, new_upper_bounds = self.calculate_bounds(
+            self._pareto_front, zs
+        )
         distances = self.calculate_distances(zs, zbars, self._nadir)
 
         return ENautilusRequest(
-            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances, self._minimize
+            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances,
         )
 
-    def handle_request(self, request: ENautilusRequest) -> Union[ENautilusRequest, ENautilusStopRequest]:
+    def handle_request(
+        self, request: ENautilusRequest
+    ) -> Union[ENautilusRequest, ENautilusStopRequest]:
         """Handles the intermediate requests.
 
         """
@@ -259,18 +260,23 @@ class ENautilus(InteractiveMethod):
             self._pareto_front, self._reachable_lb, self._reachable_ub
         )
 
-        # increment and decrement iterations
+        # decrement iterations left
         self._n_iterations_left -= 1
-        self._step_number += 1
 
         # Start again
-        zbars = self.calculate_representative_points(self._pareto_front, self._reachable_idx, self._n_points)
-        zs = self.calculate_intermediate_points(self._preferred_point, zbars, self._n_iterations_left)
-        new_lower_bounds, new_upper_bounds = self.calculate_bounds(self._pareto_front, zs)
+        zbars = self.calculate_representative_points(
+            self._pareto_front, self._reachable_idx, self._n_points
+        )
+        zs = self.calculate_intermediate_points(
+            self._preferred_point, zbars, self._n_iterations_left
+        )
+        new_lower_bounds, new_upper_bounds = self.calculate_bounds(
+            self._pareto_front, zs
+        )
         distances = self.calculate_distances(zs, zbars, self._nadir)
 
         return ENautilusRequest(
-            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances, self._minimize
+            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances,
         )
 
     def calculate_representative_points(
@@ -294,7 +300,9 @@ class ENautilus(InteractiveMethod):
             kmeans = KMeans(n_clusters=n_points)
             kmeans.fit(pareto_front[subset_indices])
 
-            closest, _ = pairwise_distances_argmin_min(kmeans.cluster_centers_, pareto_front[subset_indices])
+            closest, _ = pairwise_distances_argmin_min(
+                kmeans.cluster_centers_, pareto_front[subset_indices]
+            )
 
             zbars = pareto_front[subset_indices][closest]
 
@@ -316,7 +324,9 @@ class ENautilus(InteractiveMethod):
         Returns:
             np.ndarray: The intermediate points as a 2D array.
         """
-        zs = ((n_iterations_left - 1) / n_iterations_left) * preferred_point + (1 / n_iterations_left) * zbars
+        zs = ((n_iterations_left - 1) / n_iterations_left) * preferred_point + (
+            1 / n_iterations_left
+        ) * zbars
         return np.atleast_2d(zs)
 
     def calculate_bounds(
@@ -343,7 +353,9 @@ class ENautilus(InteractiveMethod):
                 mask = np.zeros(_pareto_front.shape[1], dtype=bool)
                 mask[r] = True
 
-                subject_to = _pareto_front[:, ~mask].reshape((_pareto_front.shape[0], _pareto_front.shape[1] - 1))
+                subject_to = _pareto_front[:, ~mask].reshape(
+                    (_pareto_front.shape[0], _pareto_front.shape[1] - 1)
+                )
 
                 con_mask = np.all(subject_to <= point[~mask], axis=1)
 
@@ -355,10 +367,12 @@ class ENautilus(InteractiveMethod):
 
         return new_lower_bounds, new_upper_bounds
 
-    def calculate_distances(self, intermediate_points: np.ndarray, zbars: np.ndarray, nadir: np.ndarray) -> np.ndarray:
-        distances = np.linalg.norm(np.atleast_2d(intermediate_points) - nadir, axis=1) / np.linalg.norm(
-            np.atleast_2d(zbars) - nadir, axis=1
-        )
+    def calculate_distances(
+        self, intermediate_points: np.ndarray, zbars: np.ndarray, nadir: np.ndarray
+    ) -> np.ndarray:
+        distances = np.linalg.norm(
+            np.atleast_2d(intermediate_points) - nadir, axis=1
+        ) / np.linalg.norm(np.atleast_2d(zbars) - nadir, axis=1)
         """Calculates the distance to the Pareto front for each intermediate
         point given utilizing representative points representing the
         intermediate points.
@@ -374,7 +388,10 @@ class ENautilus(InteractiveMethod):
         return distances * 100
 
     def calculate_reachable_point_indices(
-        self, pareto_front: np.ndarray, lower_bounds: np.ndarray, upper_bounds: np.ndarray,
+        self,
+        pareto_front: np.ndarray,
+        lower_bounds: np.ndarray,
+        upper_bounds: np.ndarray,
     ) -> List[int]:
         """Calculate the indices of the reachable Pareto optimal solutions
         based on lower and upper bounds.
