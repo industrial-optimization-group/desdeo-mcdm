@@ -87,6 +87,7 @@ def test_step_back_response(simple_data):
 
     # save solution and bounds
     prev_solutions = req.content["points"]
+    prev_distances = req.content["distances"]
     prev_l_bounds = req.content["lower_bounds"]
     prev_u_bounds = req.content["upper_bounds"]
     iter_left = req.content["n_iterations_left"]
@@ -139,6 +140,20 @@ def test_step_back_response(simple_data):
 
     assert "iterations_left" in str(e)
 
+    # prev_distances missing
+    with pytest.raises(ENautilusException) as e:
+        req.response = {
+            "preferred_point_index": 0,
+            "step_back": True,
+            "change_remaining": False,
+            "prev_solutions": prev_solutions,
+            "prev_lower_bounds": prev_l_bounds,
+            "prev_upper_bounds": prev_u_bounds,
+            "iterations_left": iter_left,
+        }
+
+    assert "prev_distances" in str(e)
+
     # correct response
     req.response = {
         "preferred_point_index": 0,
@@ -148,6 +163,7 @@ def test_step_back_response(simple_data):
         "prev_lower_bounds": prev_l_bounds,
         "prev_upper_bounds": prev_u_bounds,
         "iterations_left": iter_left,
+        "prev_distances": prev_distances,
     }
 
 
@@ -312,6 +328,7 @@ def test_step_back_once(simple_data):
 
     # save solution and bounds
     prev_solutions = req.content["points"]
+    prev_distances = req.content["distances"]
     prev_l_bounds = req.content["lower_bounds"]
     prev_u_bounds = req.content["upper_bounds"]
     iter_left = req.content["n_iterations_left"]
@@ -322,6 +339,7 @@ def test_step_back_once(simple_data):
     for i in range(n_points):
         assert np.not_equal(req.content["points"][i], prev_solutions[i]).all()
         assert np.not_equal(req.content["lower_bounds"][i], prev_l_bounds[i]).all()
+        assert np.not_equal(req.content["distances"][i], prev_distances[i]).all()
     # upper bound does not change in this case
 
     # go back to the previous iteration
@@ -330,6 +348,7 @@ def test_step_back_once(simple_data):
         "step_back": True,
         "change_remaining": False,
         "prev_solutions": prev_solutions,
+        "prev_distances": prev_distances,
         "prev_lower_bounds": prev_l_bounds,
         "prev_upper_bounds": prev_u_bounds,
         "iterations_left": iter_left,

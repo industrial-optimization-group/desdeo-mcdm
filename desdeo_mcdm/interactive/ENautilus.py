@@ -87,7 +87,8 @@ class ENautilusRequest(BaseRequest):
             'new_iterations_left'.
             If you wish to step back, then set 'step_back' to True. When stepping back to a 
             previous iteration, that iteration's intermediate solutions should be supplied alongside
-            the associated upper and lower bounds as 'prev_solutions', 'prev_lower_bounds', and
+            the associated distances and upper and lower bounds as 'prev_distances',
+            'prev_solutions', 'prev_lower_bounds', and
             'prev_upper_bounds'. The number of remaining iterations should be supplied as 
             well when stepping back as 'iterations_left'.
             When 'step_back' is true, 'preferred_point_index' and 'change_remaining' are ignored.
@@ -139,6 +140,8 @@ class ENautilusRequest(BaseRequest):
                 raise ENautilusException(
                     "When stepping back 'iterations_left' must be specified."
                 )
+            if "prev_distances" not in response:
+                raise ENautilusException("'prev_distances' entry missing.")
             # TODO: if issues arise, checking the dimensions of the prev_* entries can
             # be beneficial.
 
@@ -327,7 +330,7 @@ class ENautilus(InteractiveMethod):
             new_lower_bounds = request.response["prev_lower_bounds"]
             new_upper_bounds = request.response["prev_upper_bounds"]
             self._n_iterations_left = request.response["iterations_left"]
-            distances = None
+            distances = request.response["prev_distances"]
 
         return ENautilusRequest(
             self._ideal,
