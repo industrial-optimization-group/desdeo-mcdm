@@ -76,12 +76,22 @@ class ENautilusRequest(BaseRequest):
         points: np.ndarray,
         lower_bounds: np.ndarray,
         upper_bounds: np.ndarray,
+        n_iterations_left: int,
         distances: np.ndarray,
     ):
         self._max_index = len(np.squeeze(points))
-        msg = (
-            "Please select the most preferred point by index as 'preferred_point_index'"
-        )
+        msg = """Please select the most preferred solution by index as 'preferred_point_index'.
+            The number of remaining iterations may also be changed by 
+            setting 'change_remaining' to True and
+            supplying the desried number of remaining iterations as
+            'new_iterations_left'.
+            If you wish to step back, then set 'step_back' to True. When stepping back to a 
+            previous iteration, that iteration's preferred solution should be supplied alongside
+            the associated upper and lower bounds as 'prev_pref_solution', 'prev_lower_bounds', and
+            'prev_upper_bounds'. The number of remaining iterations should be supplied as 
+            well when stepping back as 'iterations_left'.
+            When 'step_back' is true, 'preferred_point_index' and 'change_remaining' are ignored.
+            """
         content = {
             "message": msg,
             "ideal": ideal,
@@ -89,19 +99,48 @@ class ENautilusRequest(BaseRequest):
             "points": points,
             "lower_bounds": lower_bounds,
             "upper_bounds": upper_bounds,
+            "n_iterations_left": n_iterations_left,
             "distances": distances,
         }
 
         super().__init__("reference_point_preference", "required", content=content)
 
     def validator(self, response: Dict) -> None:
-        if "preferred_point_index" not in response:
-            raise ENautilusException("'preferred_point' not specified")
+        if (
+            "preferred_point_index" not in response
+            or "step_back" not in response
+            or "change_remaining" not in response
+        ):
+            raise ENautilusException(
+                "'preferred_point', 'step_back', and 'change_remaining' must be specified."
+            )
 
-        pref_point_index = response["preferred_point_index"]
+        if not response["step_back"]:
+            pref_point_index = response["preferred_point_index"]
 
-        if pref_point_index < 0 or pref_point_index > self._max_index:
-            raise ENautilusException("The given index is out of bounds.")
+            if pref_point_index < 0 or pref_point_index > self._max_index:
+                raise ENautilusException("The given index is out of bounds.")
+
+            if response["change_remaining"]:
+                if "iterations_left" not in response:
+                    raise ENautilusException(
+                        "When 'change_remaining' is True, 'iterations_left' must be specified."
+                    )
+        else:
+            # stepping back
+            # check that the previous solution is given alongside its bounds.
+            if "prev_pref_solution" not in response:
+                raise ENautilusException("'prev_pref_solution' entry missing.")
+            if "prev_lower_bounds" not in response:
+                raise ENautilusException("'prev_lower_bounds' entry missing.")
+            if "prev_upper_bounds" not in response:
+                raise ENautilusException("'prev_upper_bounds' entry missing.")
+            if "iterations_left" not in response:
+                raise ENautilusException(
+                    "When stepping back 'iterations_left' must be specified."
+                )
+            # TODO: if issues arise, checking the dimensions of the prev_* entries can
+            # be beneficial.
 
     @BaseRequest.response.setter
     def response(self, response: Dict):
@@ -236,7 +275,13 @@ class ENautilus(InteractiveMethod):
         distances = self.calculate_distances(zs, zbars, self._nadir)
 
         return ENautilusRequest(
-            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances,
+            self._ideal,
+            self._nadir,
+            zs,
+            new_lower_bounds,
+            new_upper_bounds,
+            self._n_iterations_left,
+            distances,
         )
 
     def handle_request(
@@ -276,7 +321,13 @@ class ENautilus(InteractiveMethod):
         distances = self.calculate_distances(zs, zbars, self._nadir)
 
         return ENautilusRequest(
-            self._ideal, self._nadir, zs, new_lower_bounds, new_upper_bounds, distances,
+            self._ideal,
+            self._nadir,
+            zs,
+            new_lower_bounds,
+            new_upper_bounds,
+            self._n_iterations_left,
+            distances,
         )
 
     def calculate_representative_points(
@@ -405,42 +456,3 @@ class ENautilus(InteractiveMethod):
         reachable_idx = np.argwhere(low_idx & up_idx).squeeze()
 
         return reachable_idx
-
-
-if __name__ == "__main__":
-    # front = np.array([[1, 2, 3], [2, 3, 4], [2, 2, 3], [3, 2, 1]], dtype=float)
-    # ideal = np.zeros(3)
-    # nadir = np.ones(3) * 5
-    f1 = np.linspace(1, 100, 50)
-    f2 = f1[::-1] ** 2
-
-    front = np.stack((f1, f2)).T
-    ideal = np.min(front, axis=0)
-    nadir = np.max(front, axis=0)
-
-    method = ENautilus((front), ideal, nadir)
-
-    req = method.start()
-
-    n_iterations = 11
-    n_points = 4
-
-    req.response = {
-        "n_iterations": n_iterations,
-        "n_points": n_points,
-    }
-
-    req = method.iterate(req)
-    req.response = {"preferred_point_index": 0}
-
-    while method._n_iterations_left > 1:
-        print(method._n_iterations_left)
-        req = method.iterate(req)
-        print(req.content["points"])
-        req.response = {"preferred_point_index": 0}
-
-    print(method._n_iterations_left)
-    req = method.iterate(req)
-    print(method._n_iterations_left)
-    print(method._distance)
-    print(req.content["solution"])
