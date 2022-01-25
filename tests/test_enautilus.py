@@ -311,17 +311,17 @@ def test_step_back_once(simple_data):
         }
 
     # save solution and bounds
-    """
-    prev_solution = req.content["points"][0]
-    prev_l_bounds = req.content["lower_bounds"][0]
-    prev_u_bounds = req.content["upper_bounds"][0]
+    prev_solutions = req.content["points"]
+    prev_l_bounds = req.content["lower_bounds"]
+    prev_u_bounds = req.content["upper_bounds"]
     iter_left = req.content["n_iterations_left"]
 
     req = method.iterate(req)
 
     # we should have new solutions
-    assert np.not_equal(req.content["points"][0], prev_solution).all()
-    assert np.not_equal(req.content["lower_bounds"][0], prev_l_bounds).all()
+    for i in range(n_points):
+        assert np.not_equal(req.content["points"][i], prev_solutions[i]).all()
+        assert np.not_equal(req.content["lower_bounds"][i], prev_l_bounds[i]).all()
     # upper bound does not change in this case
 
     # go back to the previous iteration
@@ -329,13 +329,14 @@ def test_step_back_once(simple_data):
         "preferred_point_index": 0,
         "step_back": True,
         "change_remaining": False,
-        "prev_pref_solution": prev_solution,
-        "prev_lower_bound": prev_l_bounds,
-        "prev_upper_bound": prev_u_bounds,
+        "prev_solutions": prev_solutions,
+        "prev_lower_bounds": prev_l_bounds,
+        "prev_upper_bounds": prev_u_bounds,
         "iterations_left": iter_left,
     }
     req = method.iterate(req)
 
     # we should have the same values as previously
-    """
+    npt.assert_almost_equal(req.content["points"], prev_solutions)
+    npt.assert_almost_equal(req.content["lower_bounds"], prev_l_bounds)
 

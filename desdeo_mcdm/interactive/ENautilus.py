@@ -309,29 +309,25 @@ class ENautilus(InteractiveMethod):
             else:
                 self._n_iterations_left = request.response["iterations_left"]
 
+            # Start again
+            zbars = self.calculate_representative_points(
+                self._pareto_front, self._reachable_idx, self._n_points
+            )
+            zs = self.calculate_intermediate_points(
+                self._preferred_point, zbars, self._n_iterations_left
+            )
+            new_lower_bounds, new_upper_bounds = self.calculate_bounds(
+                self._pareto_front, zs
+            )
+            distances = self.calculate_distances(zs, zbars, self._nadir)
+
         # stepping back
         else:
-            pass
-            self._preferred_point = request.response["prev_pref_solution"]
-            self._reachable_lb = request.response["prev_lower_bound"]
-            self._reachable_ub = request.response["prev_upper_bound"]
+            zs = request.response["prev_solutions"]
+            new_lower_bounds = request.response["prev_lower_bounds"]
+            new_upper_bounds = request.response["prev_upper_bounds"]
             self._n_iterations_left = request.response["iterations_left"]
-
-            self._reachable_idx = self.calculate_reachable_point_indices(
-                self._pareto_front, self._reachable_lb, self._reachable_ub
-            )
-
-        # Start again
-        zbars = self.calculate_representative_points(
-            self._pareto_front, self._reachable_idx, self._n_points
-        )
-        zs = self.calculate_intermediate_points(
-            self._preferred_point, zbars, self._n_iterations_left
-        )
-        new_lower_bounds, new_upper_bounds = self.calculate_bounds(
-            self._pareto_front, zs
-        )
-        distances = self.calculate_distances(zs, zbars, self._nadir)
+            distances = None
 
         return ENautilusRequest(
             self._ideal,
