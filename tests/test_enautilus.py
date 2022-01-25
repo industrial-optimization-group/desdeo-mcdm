@@ -54,8 +54,8 @@ def test_simple_iterate(simple_data):
 
 
 @pytest.mark.enautilus
-def test_step_back(simple_data):
-    """Tests stepping back"""
+def test_step_back_response(simple_data):
+    """Tests response for stepping back"""
     front, ideal, nadir = simple_data
 
     method = ENautilus((front), ideal, nadir)
@@ -86,14 +86,14 @@ def test_step_back(simple_data):
         }
 
     # save solution and bounds
-    prev_solution = req.content["points"][0]
-    prev_l_bounds = req.content["lower_bounds"][0]
-    prev_u_bounds = req.content["upper_bounds"][0]
+    prev_solutions = req.content["points"]
+    prev_l_bounds = req.content["lower_bounds"]
+    prev_u_bounds = req.content["upper_bounds"]
     iter_left = req.content["n_iterations_left"]
 
     req = method.iterate(req)
 
-    # prev_solution missing
+    # prev_solutions missing
     with pytest.raises(ENautilusException) as e:
         req.response = {
             "preferred_point_index": 0,
@@ -101,7 +101,7 @@ def test_step_back(simple_data):
             "change_remaining": False,
         }
 
-    assert "prev_pref_solution" in str(e)
+    assert "prev_solutions" in str(e)
 
     # previous lower bound missing
     with pytest.raises(ENautilusException) as e:
@@ -109,10 +109,10 @@ def test_step_back(simple_data):
             "preferred_point_index": 0,
             "step_back": True,
             "change_remaining": False,
-            "prev_pref_solution": prev_solution,
+            "prev_solutions": prev_solutions,
         }
 
-    assert "prev_lower_bound" in str(e)
+    assert "prev_lower_bounds" in str(e)
 
     # previous upper bound missing
     with pytest.raises(ENautilusException) as e:
@@ -120,11 +120,11 @@ def test_step_back(simple_data):
             "preferred_point_index": 0,
             "step_back": True,
             "change_remaining": False,
-            "prev_pref_solution": prev_solution,
-            "prev_lower_bound": prev_l_bounds,
+            "prev_solutions": prev_solutions,
+            "prev_lower_bounds": prev_l_bounds,
         }
 
-    assert "prev_upper_bound" in str(e)
+    assert "prev_upper_bounds" in str(e)
 
     # iterations_left missing
     with pytest.raises(ENautilusException) as e:
@@ -132,9 +132,9 @@ def test_step_back(simple_data):
             "preferred_point_index": 0,
             "step_back": True,
             "change_remaining": False,
-            "prev_pref_solution": prev_solution,
-            "prev_lower_bound": prev_l_bounds,
-            "prev_upper_bound": prev_u_bounds,
+            "prev_solutions": prev_solutions,
+            "prev_lower_bounds": prev_l_bounds,
+            "prev_upper_bounds": prev_u_bounds,
         }
 
     assert "iterations_left" in str(e)
@@ -144,9 +144,9 @@ def test_step_back(simple_data):
         "preferred_point_index": 0,
         "step_back": True,
         "change_remaining": False,
-        "prev_pref_solution": prev_solution,
-        "prev_lower_bound": prev_l_bounds,
-        "prev_upper_bound": prev_u_bounds,
+        "prev_solutions": prev_solutions,
+        "prev_lower_bounds": prev_l_bounds,
+        "prev_upper_bounds": prev_u_bounds,
         "iterations_left": iter_left,
     }
 
@@ -276,3 +276,66 @@ def test_change_remaining_iterate(simple_data):
 
     assert method._n_iterations_left == iterations_decrement
     assert req.content["n_iterations_left"] == iterations_decrement
+
+
+@pytest.mark.enautilus
+def test_step_back_once(simple_data):
+    """Tests stepping back once"""
+    front, ideal, nadir = simple_data
+
+    method = ENautilus((front), ideal, nadir)
+
+    req = method.start()
+
+    n_iterations = 8
+    n_points = 3
+
+    req.response = {
+        "n_iterations": n_iterations,
+        "n_points": n_points,
+    }
+
+    req = method.iterate(req)
+    req.response = {
+        "preferred_point_index": 0,
+        "step_back": False,
+        "change_remaining": False,
+    }
+
+    for _ in range(3):
+        req = method.iterate(req)
+        req.response = {
+            "preferred_point_index": 0,
+            "step_back": False,
+            "change_remaining": False,
+        }
+
+    # save solution and bounds
+    """
+    prev_solution = req.content["points"][0]
+    prev_l_bounds = req.content["lower_bounds"][0]
+    prev_u_bounds = req.content["upper_bounds"][0]
+    iter_left = req.content["n_iterations_left"]
+
+    req = method.iterate(req)
+
+    # we should have new solutions
+    assert np.not_equal(req.content["points"][0], prev_solution).all()
+    assert np.not_equal(req.content["lower_bounds"][0], prev_l_bounds).all()
+    # upper bound does not change in this case
+
+    # go back to the previous iteration
+    req.response = {
+        "preferred_point_index": 0,
+        "step_back": True,
+        "change_remaining": False,
+        "prev_pref_solution": prev_solution,
+        "prev_lower_bound": prev_l_bounds,
+        "prev_upper_bound": prev_u_bounds,
+        "iterations_left": iter_left,
+    }
+    req = method.iterate(req)
+
+    # we should have the same values as previously
+    """
+

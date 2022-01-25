@@ -86,9 +86,9 @@ class ENautilusRequest(BaseRequest):
             supplying the desried number of remaining iterations as
             'new_iterations_left'.
             If you wish to step back, then set 'step_back' to True. When stepping back to a 
-            previous iteration, that iteration's preferred solution should be supplied alongside
-            the associated upper and lower bounds as 'prev_pref_solution', 'prev_lower_bound', and
-            'prev_upper_bound'. The number of remaining iterations should be supplied as 
+            previous iteration, that iteration's intermediate solutions should be supplied alongside
+            the associated upper and lower bounds as 'prev_solutions', 'prev_lower_bounds', and
+            'prev_upper_bounds'. The number of remaining iterations should be supplied as 
             well when stepping back as 'iterations_left'.
             When 'step_back' is true, 'preferred_point_index' and 'change_remaining' are ignored.
             """
@@ -112,7 +112,7 @@ class ENautilusRequest(BaseRequest):
             or "change_remaining" not in response
         ):
             raise ENautilusException(
-                "'preferred_point', 'step_back', and 'change_remaining' must be specified."
+                "'preferred_point_index', 'step_back', and 'change_remaining' must be specified."
             )
 
         if not response["step_back"]:
@@ -129,12 +129,12 @@ class ENautilusRequest(BaseRequest):
         else:
             # stepping back
             # check that the previous solution is given alongside its bounds.
-            if "prev_pref_solution" not in response:
-                raise ENautilusException("'prev_pref_solution' entry missing.")
-            if "prev_lower_bound" not in response:
-                raise ENautilusException("'prev_lower_bound' entry missing.")
-            if "prev_upper_bound" not in response:
-                raise ENautilusException("'prev_upper_bound' entry missing.")
+            if "prev_solutions" not in response:
+                raise ENautilusException("'prev_solutions' entry missing.")
+            if "prev_lower_bounds" not in response:
+                raise ENautilusException("'prev_lower_bounds' entry missing.")
+            if "prev_upper_bounds" not in response:
+                raise ENautilusException("'prev_upper_bounds' entry missing.")
             if "iterations_left" not in response:
                 raise ENautilusException(
                     "When stepping back 'iterations_left' must be specified."
@@ -227,8 +227,6 @@ class ENautilus(InteractiveMethod):
         # currently reachable solution as a list of indices of the Pareto front
         self._reachable_idx = list(range(0, self._pareto_front.shape[0]))
 
-        self._distance = None
-
         self._preferred_point = None
         self._projection_index = None
 
@@ -300,7 +298,6 @@ class ENautilus(InteractiveMethod):
 
             self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
             self._reachable_ub = request.content["upper_bounds"][preferred_point_index]
-            self._distance = request.content["distances"][preferred_point_index]
 
             self._reachable_idx = self.calculate_reachable_point_indices(
                 self._pareto_front, self._reachable_lb, self._reachable_ub
@@ -315,6 +312,14 @@ class ENautilus(InteractiveMethod):
         # stepping back
         else:
             pass
+            self._preferred_point = request.response["prev_pref_solution"]
+            self._reachable_lb = request.response["prev_lower_bound"]
+            self._reachable_ub = request.response["prev_upper_bound"]
+            self._n_iterations_left = request.response["iterations_left"]
+
+            self._reachable_idx = self.calculate_reachable_point_indices(
+                self._pareto_front, self._reachable_lb, self._reachable_ub
+            )
 
         # Start again
         zbars = self.calculate_representative_points(
