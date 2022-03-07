@@ -156,9 +156,11 @@ class ENautilusStopRequest(BaseRequest):
 
     """
 
-    def __init__(self, preferred_point: np.ndarray):
+    def __init__(
+        self, preferred_point: np.ndarray, solution: Optional[np.ndarray] = None
+    ):
         msg = "Most preferred solution found."
-        content = {"message": msg, "solution": preferred_point}
+        content = {"message": msg, "objective": preferred_point, "solution": solution}
 
         super().__init__("print", "no_interaction", content=content)
 
@@ -170,6 +172,7 @@ class ENautilus(InteractiveMethod):
         ideal: np.ndarray,
         nadir: np.ndarray,
         objective_names: Optional[List[str]] = None,
+        variables: Optional[np.ndarray] = None,
     ):
         """
 
@@ -184,6 +187,10 @@ class ENautilus(InteractiveMethod):
             objective_names (Optional[List[str]], optional): Names of the
                 objectives. List must match the number of columns in
                 pareto_front. Defaults to 'f1', 'f2', 'f3', ...
+            variables (Optional[np.ndarray], optional): The decision variables
+                of the objective vectors in pareto_front. The i'th variable vector
+                in variables corresponds to the i'th objective vector in
+                pareto_front. Defaults to None.
 
         Raises:
             ENavigatorException: One or more dimension mismatches are
@@ -219,6 +226,8 @@ class ENautilus(InteractiveMethod):
 
         self._ideal = ideal
         self._nadir = nadir
+
+        self._variables = variables
 
         # in objective space!
         self._pareto_front = pareto_front
@@ -297,7 +306,18 @@ class ENautilus(InteractiveMethod):
 
             if self._n_iterations_left <= 1:
                 self._n_iterations_left = 0
-                return ENautilusStopRequest(self._preferred_point)
+                # if self._variables is defined: first, find the index of
+                # self._preferred point in self._pareto_front. Second,
+                # return the variable vector at the found position. Otherwise,
+                # do not return any variable vectors.
+                if self._variables is not None:
+                    idx = np.linalg.norm(
+                        np.abs(self._pareto_front - self._preferred_point), axis=1
+                    ).argmin()
+                    solution = self._variables[idx]
+                else:
+                    solution = None
+                return ENautilusStopRequest(self._preferred_point, solution)
 
             self._reachable_lb = request.content["lower_bounds"][preferred_point_index]
             self._reachable_ub = request.content["upper_bounds"][preferred_point_index]

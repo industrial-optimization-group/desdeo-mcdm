@@ -16,6 +16,16 @@ def simple_data():
     return front, ideal, nadir
 
 
+@pytest.fixture
+def small_data():
+    front = np.array([[1, 2, 3], [3, 6, 4], [-1, 3, 5]])
+    variables = np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]])
+    ideal = np.min(front, axis=0)
+    nadir = np.max(front, axis=0)
+
+    return front, ideal, nadir, variables
+
+
 @pytest.mark.enautilus
 def test_simple_iterate(simple_data):
     """Iterates the whole method through once."""
@@ -302,7 +312,6 @@ def test_step_back_once(simple_data):
     method = ENautilus((front), ideal, nadir)
 
     req = method.start()
-
     n_iterations = 8
     n_points = 3
 
@@ -359,3 +368,41 @@ def test_step_back_once(simple_data):
     npt.assert_almost_equal(req.content["points"], prev_solutions)
     npt.assert_almost_equal(req.content["lower_bounds"], prev_l_bounds)
 
+
+@pytest.mark.enautilus
+def test_get_solution(small_data):
+    """Iterate through and check solution"""
+    front, ideal, nadir, variables = small_data
+
+    method = ENautilus((front), ideal, nadir, variables=variables)
+
+    req = method.start()
+
+    n_iterations = 8
+    n_points = 3
+
+    req.response = {
+        "n_iterations": n_iterations,
+        "n_points": n_points,
+    }
+
+    for _ in range(8):
+        req = method.iterate(req)
+        req.response = {
+            "preferred_point_index": 0,
+            "step_back": False,
+            "change_remaining": False,
+        }
+
+    # next iteration should be last
+    assert method._n_iterations_left == 1
+    req = method.iterate(req)
+
+    assert "solution" in req.content
+    assert "objective" in req.content
+
+    # check that solution is correct
+    should_be_i = np.linalg.norm(front - req.content["objective"]).argmin()
+    should_be = variables[should_be_i]
+
+    np.testing.assert_almost_equal(should_be, req.content["solution"])
