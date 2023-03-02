@@ -32,6 +32,7 @@ Documentation for this package can be found [here](https://desdeo-mcdm.readthedo
 - NAUTILUSv2
 - Reference point method
 - (Convex) pareto navigator
+- PAINT
 
 ## Citation
 
