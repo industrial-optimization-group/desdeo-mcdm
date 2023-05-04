@@ -444,9 +444,9 @@ class Nautilus(InteractiveMethod):
 
         """
 
-        if type(request) is NautilusInitialRequest:
+        if type(request).__name__ == NautilusInitialRequest.__name__:
             return self.handle_initial_request(request)
-        elif type(request) is NautilusRequest:
+        elif type(request).__name__ == NautilusRequest.__name__:
             return self.handle_request(request)
         else:
             # if stop request, do nothing

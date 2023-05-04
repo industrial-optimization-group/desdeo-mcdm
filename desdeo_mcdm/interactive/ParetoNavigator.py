@@ -415,11 +415,11 @@ class ParetoNavigator(InteractiveMethod):
                 A new request with content depending on the Decision Maker's preferences.
         """
 
-        if type(request) is ParetoNavigatorInitialRequest:
+        if type(request).__name__ == ParetoNavigatorInitialRequest.__name__:
             return self.handle_initial_request(request)
-        elif type(request) is ParetoNavigatorRequest:
+        elif type(request).__name__ is ParetoNavigatorRequest.__name__:
             return self.handle_request(request)
-        elif type(request) is ParetoNavigatorSolutionRequest:
+        elif type(request).__name__ is ParetoNavigatorSolutionRequest.__name__:
             return self.handle_solution_request(request)
         else:
             # if stop request, do nothing

@@ -254,9 +254,9 @@ class ENautilus(InteractiveMethod):
         """Perform the next logical iteration step based on the given request type.
 
         """
-        if type(request) is ENautilusInitialRequest:
+        if type(request).__name__ == ENautilusInitialRequest.__name__:
             return self.handle_initial_request(request)
-        elif type(request) is ENautilusRequest:
+        elif type(request).__name__ == ENautilusRequest.__name__:
             return self.handle_request(request)
         else:
             # if stop request, do nothing

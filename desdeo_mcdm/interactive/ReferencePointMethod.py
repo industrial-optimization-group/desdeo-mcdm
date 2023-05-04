@@ -337,9 +337,9 @@ class ReferencePointMethod(InteractiveMethod):
             preferences.
         """
 
-        if type(request) is RPMInitialRequest:
+        if type(request).__name__ == RPMInitialRequest.__name__:
             return self.handle_initial_request(request)
-        elif type(request) is RPMRequest:
+        elif type(request).__name__ is RPMRequest.__name__:
             return self.handle_request(request)
         else:
             # if stop request, do nothing

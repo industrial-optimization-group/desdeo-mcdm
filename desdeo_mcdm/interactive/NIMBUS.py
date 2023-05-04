@@ -1004,7 +1004,7 @@ class NIMBUS(InteractiveMethod):
             The next logically sound request.
         """
         if self._state == "classify":
-            if type(request) != NimbusClassificationRequest:
+            if type(request).__name__ != NimbusClassificationRequest.__name__:
                 raise NimbusException(
                     f"Expected request type {type(NimbusClassificationRequest)}, was {type(request)}."
                 )
@@ -1014,7 +1014,7 @@ class NIMBUS(InteractiveMethod):
             return requests
 
         elif self._state == "archive":
-            if type(request) != NimbusSaveRequest:
+            if type(request).__name__ != NimbusSaveRequest.__name__:
                 raise NimbusException(f"Expected request type {type(NimbusSaveRequest)}, was {type(request)}.")
 
             requests = self.handle_save_request(request)
@@ -1022,30 +1022,30 @@ class NIMBUS(InteractiveMethod):
             return requests
 
         elif self._state == "intermediate":
-            if type(request) != NimbusIntermediateSolutionsRequest:
+            if type(request).__name__ != NimbusIntermediateSolutionsRequest.__name__:
                 raise NimbusException(
                     f"Expected request type {type(NimbusIntermediateSolutionsRequest)}, was {type(request)}."
                 )
 
             requests = self.handle_intermediate_solutions_request(request)
 
-            if type(requests[0]) == NimbusSaveRequest:
+            if type(requests[0]).__name__ == NimbusSaveRequest.__name__:
                 self._state = "archive"
-            elif type(requests[0]) == NimbusMostPreferredRequest:
+            elif type(requests[0]).__name__ == NimbusMostPreferredRequest.__name__:
                 self._state = "preferred"
 
             return requests
 
         elif self._state == "preferred":
-            if type(request) != NimbusMostPreferredRequest:
+            if type(request).__name__ != NimbusMostPreferredRequest.__name__:
                 raise NimbusException(f"Expected request type {type(NimbusMostPreferredRequest)}, was {type(request)}.")
 
             requests = self.handle_most_preferred_request(request)
 
-            if type(requests[0]) == NimbusStopRequest:
+            if type(requests[0]).__name__ == NimbusStopRequest.__name__:
                 self._state = "end"
 
-            elif type(requests[0]) == NimbusClassificationRequest:
+            elif type(requests[0]).__name__ == NimbusClassificationRequest.__name__:
                 self._state = "classify"
 
             return requests
