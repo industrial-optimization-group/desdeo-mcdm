@@ -1,6 +1,6 @@
 [![PyPI version](https://badge.fury.io/py/desdeo-mcdm.svg)](https://badge.fury.io/py/desdeo-mcdm)
 [![Documentation Status](https://readthedocs.org/projects/desdeo-mcdm/badge/?version=latest)](https://desdeo-mcdm.readthedocs.io/en/latest/?badge=latest)
-[![automate-DESDEO-mcdm](https://github.com/Sepuliini/desdeo-mcdm/actions/workflows/automate-DESDEO-mcdm.yml/badge.svg)](https://github.com/Sepuliini/desdeo-mcdm/actions/workflows/automate-DESDEO-mcdm.yml)
+[![DESDEO-mcdm](https://github.com/Sepuliini/desdeo-mcdm/actions/workflows/DESDEO-mcdm.yml/badge.svg)](https://github.com/Sepuliini/desdeo-mcdm/actions/workflows/DESDEO-mcdm.yml)
 
 # desdeo-mcdm
 
