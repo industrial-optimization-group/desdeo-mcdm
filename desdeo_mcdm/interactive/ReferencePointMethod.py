@@ -339,7 +339,7 @@ class ReferencePointMethod(InteractiveMethod):
 
         if type(request).__name__ == RPMInitialRequest.__name__:
             return self.handle_initial_request(request)
-        elif type(request).__name__ is RPMRequest.__name__:
+        elif type(request).__name__ == RPMRequest.__name__:
             return self.handle_request(request)
         else:
             # if stop request, do nothing
