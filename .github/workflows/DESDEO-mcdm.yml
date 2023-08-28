@@ -84,7 +84,3 @@ jobs:
           source .venv/bin/activate
           pip install pytest-rerunfailures
           pytest tests/
-
-              echo "Retrying failed tests... (Attempt $i)"
-            done
-          fi
