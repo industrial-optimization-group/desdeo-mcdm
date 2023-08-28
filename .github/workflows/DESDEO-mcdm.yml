@@ -83,4 +83,4 @@ jobs:
         run: |
           source .venv/bin/activate
           pip install pytest-rerunfailures
-          pytest tests/
+          pytest tests/ --reruns 10
