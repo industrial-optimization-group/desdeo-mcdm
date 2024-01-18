@@ -490,8 +490,8 @@ class Nautilus(InteractiveMethod):
         self._q = self._zs[self._step_number - 1]
         x0 = self._problem.get_variable_upper_bounds() / 2
 
-        self._lower_bounds[self._step_number] = self._ideal
-        self._upper_bounds[self._step_number] = self._nadir
+        self._lower_bounds[self._step_number - 1] = self._ideal
+        self._upper_bounds[self._step_number - 1] = self._nadir
 
         # solve the ASF-problem
         result = self.solve_asf(
@@ -524,8 +524,8 @@ class Nautilus(InteractiveMethod):
             None,
         )
 
-        self._lower_bounds[self._step_number + 1] = new_lower_bounds
-        self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+        self._lower_bounds[self._step_number] = new_lower_bounds
+        self._upper_bounds[self._step_number] = self._zs[self._step_number]
 
         # calculate distance from current iteration point to Pareto optimal set
         self._ds[self._step_number] = self.calculate_distance(
@@ -536,8 +536,8 @@ class Nautilus(InteractiveMethod):
         return NautilusRequest(
             self._zs[self._step_number],
             self._nadir,
-            self._lower_bounds[self._step_number + 1],
-            self._upper_bounds[self._step_number + 1],
+            self._lower_bounds[self._step_number],
+            self._upper_bounds[self._step_number],
             self._ds[self._step_number],
         )
 
@@ -573,7 +573,8 @@ class Nautilus(InteractiveMethod):
                     np.concatenate((self._upper_bounds, extra_space), axis=None), dtype=object
                 )
 
-            self._n_iterations_left = resp["n_iterations"]
+            self._n_iterations_left = self._n_iterations_left + resp["n_iterations"] - self._n_iterations
+            self._n_iterations = resp["n_iterations"]
 
         # last iteration, stop solution process
         if self._n_iterations_left <= 1:
@@ -637,8 +638,8 @@ class Nautilus(InteractiveMethod):
                 None,
             )
 
-            self._lower_bounds[self._step_number + 1] = new_lower_bounds
-            self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+            self._lower_bounds[self._step_number] = new_lower_bounds
+            self._upper_bounds[self._step_number] = self._zs[self._step_number]
 
             # calculate distance from current iteration point to Pareto optimal set
             self._ds[self._step_number] = self.calculate_distance(
@@ -649,8 +650,8 @@ class Nautilus(InteractiveMethod):
             return NautilusRequest(
                 self._zs[self._step_number],
                 self._nadir,
-                self._lower_bounds[self._step_number + 1],
-                self._upper_bounds[self._step_number + 1],
+                self._lower_bounds[self._step_number],
+                self._upper_bounds[self._step_number],
                 self._ds[self._step_number],
             )
 
@@ -674,8 +675,8 @@ class Nautilus(InteractiveMethod):
                     None,
                 )
 
-                self._lower_bounds[self._step_number + 1] = new_lower_bounds
-                self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+                self._lower_bounds[self._step_number] = new_lower_bounds
+                self._upper_bounds[self._step_number] = self._zs[self._step_number]
 
                 # calculate distance from current iteration point to Pareto optimal set
                 self._ds[self._step_number] = self.calculate_distance(
@@ -686,8 +687,8 @@ class Nautilus(InteractiveMethod):
                 return NautilusRequest(
                     self._zs[self._step_number],
                     self._nadir,
-                    self._lower_bounds[self._step_number + 1],
-                    self._upper_bounds[self._step_number + 1],
+                    self._lower_bounds[self._step_number],
+                    self._upper_bounds[self._step_number],
                     self._ds[self._step_number],
                 )
 
@@ -735,8 +736,8 @@ class Nautilus(InteractiveMethod):
                     None,
                 )
 
-                self._lower_bounds[self._step_number + 1] = new_lower_bounds
-                self._upper_bounds[self._step_number + 1] = self._zs[self._step_number]
+                self._lower_bounds[self._step_number] = new_lower_bounds
+                self._upper_bounds[self._step_number] = self._zs[self._step_number]
 
                 # calculate distance from current iteration point to Pareto optimal set
                 self._ds[self._step_number] = self.calculate_distance(
@@ -747,8 +748,8 @@ class Nautilus(InteractiveMethod):
                 return NautilusRequest(
                     self._zs[self._step_number],
                     self._nadir,
-                    self._lower_bounds[self._step_number + 1],
-                    self._upper_bounds[self._step_number + 1],
+                    self._lower_bounds[self._step_number],
+                    self._upper_bounds[self._step_number],
                     self._ds[self._step_number],
                 )
 
